@@ -1,0 +1,34 @@
+{
+  "name": "yosoft-accounting",
+  "version": "1.0.0",
+  "description": "Yosoft Accounting for Suppliers, Inventory, and Sales",
+  "main": "electron.js",
+  "homepage": ".",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "electron": "electron .",
+    "electron-dev": "concurrently -k \"npm run dev\" \"node start-electron.js\""
+  },
+  "keywords": [
+    "accounting",
+    "inventory",
+    "sales",
+    "suppliers"
+  ],
+  "author": "Your Name",
+  "license": "ISC",
+  "dependencies": {
+    "antd": "^5.12.8",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.2.1",
+    "concurrently": "^8.2.2",
+    "electron": "^28.1.0",
+    "vite": "^5.0.8",
+    "wait-on": "^7.2.0"
+  }
+}
