@@ -1,7 +1,10 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
-// كشف دالة آمنة لواجهة المستخدم لفتح نافذة اختيار الملفات وقراءة ملفات Excel
+// هنا نكشف الوظائف التي نسمح للواجهة باستخدامها
 contextBridge.exposeInMainWorld('electronAPI', {
+  // وظيفة لفتح نافذة اختيار الملفات
   openFile: () => ipcRenderer.invoke('dialog:openFile'),
-  readExcelFile: (filePath) => ipcRenderer.invoke('readExcelFile', filePath)
+
+  // وظيفة لقراءة بيانات ملف Excel
+  readExcelFile: (filePath) => ipcRenderer.invoke('readExcelFile', filePath),
 });

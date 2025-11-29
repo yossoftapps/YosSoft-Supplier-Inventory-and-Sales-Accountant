@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { ConfigProvider, Layout, Typography, Tabs } from 'antd';
 import ar_EG from 'antd/locale/ar_EG';
 
@@ -21,18 +21,32 @@ function App() {
   const [processedData, setProcessedData] = useState(null);
   const [activeTabKey, setActiveTabKey] = useState('import');
 
-  const [reportCounts, setReportCounts] = useState({
-    import: 0, netPurchases: 0, netSales: 0, physicalInventory: 0,
-    endingInventory: 0, bookInventory: 0, salesCost: 0, excessInventory: 0,
-    suppliersPayables: 0, supplierMovement: 0,
-  });
+  // استخدام useMemo لحساب عدد السجلات بكفاءة عند تغير البيانات فقط
+  const reportCounts = useMemo(() => {
+    if (!processedData) {
+      return {
+        import: 0, netPurchases: 0, netSales: 0, physicalInventory: 0,
+        endingInventory: 0, bookInventory: 0, salesCost: 0, excessInventory: 0,
+        suppliersPayables: 0, supplierMovement: 0,
+      };
+    }
+
+    return {
+      import: 0, // لا يوجد سجلات للاستيراد
+      netPurchases: processedData.netPurchases?.netPurchasesList.length + processedData.netPurchases?.orphanReturnsList.length || 0,
+      netSales: processedData.netSales?.netSalesList.length + processedData.netSales?.orphanReturnsList.length || 0,
+      physicalInventory: processedData.physicalInventory?.listE.length + processedData.physicalInventory?.listF.length || 0,
+      endingInventory: processedData.endingInventory?.endingInventoryList.length + processedData.endingInventory?.listB.length || 0,
+      bookInventory: processedData.bookInventory?.length || 0,
+      salesCost: processedData.salesCost?.length || 0,
+      excessInventory: processedData.excessInventory?.length || 0,
+      suppliersPayables: processedData.suppliersPayables?.length || 0,
+      supplierMovement: processedData.suppliersPayables?.length || 0,
+    };
+  }, [processedData]);
 
   const handleDataProcessed = (data) => {
     setProcessedData(data);
-    const counts = { ...reportCounts };
-    counts.netPurchases = data.netPurchases.netPurchasesList.length + data.netPurchases.orphanReturnsList.length;
-    counts.netSales = data.netSales.netSalesList.length + data.netSales.orphanReturnsList.length;
-    setReportCounts(counts);
   };
 
   const onTabChange = (key) => {
@@ -42,43 +56,43 @@ function App() {
   const tabItems = [
     {
       key: 'import',
-      label: (<span>استيراد البيانات<span style={{ marginRight: 8, color: '#888' }}>({reportCounts.import})</span></span>),
+      label: `استيراد البيانات`,
     },
     {
       key: 'netPurchases',
-      label: (<span>صافي المشتريات<span style={{ marginRight: 8, color: '#888' }}>({reportCounts.netPurchases})</span></span>),
+      label: `صافي المشتريات (${reportCounts.netPurchases})`,
     },
     {
       key: 'netSales',
-      label: (<span>صافي المبيعات<span style={{ marginRight: 8, color: '#888' }}>({reportCounts.netSales})</span></span>),
+      label: `صافي المبيعات (${reportCounts.netSales})`,
     },
     {
       key: 'physicalInventory',
-      label: (<span>الجرد الفعلي<span style={{ marginRight: 8, color: '#888' }}>({reportCounts.physicalInventory})</span></span>),
+      label: `الجرد الفعلي (${reportCounts.physicalInventory})`,
     },
     {
       key: 'endingInventory',
-      label: (<span>المخزون النهائي<span style={{ marginRight: 8, color: '#888' }}>({reportCounts.endingInventory})</span></span>),
+      label: `المخزون النهائي (${reportCounts.endingInventory})`,
     },
     {
       key: 'bookInventory',
-      label: (<span>الجرد الدفتري<span style={{ marginRight: 8, color: '#888' }}>({reportCounts.bookInventory})</span></span>),
+      label: `الجرد الدفتري (${reportCounts.bookInventory})`,
     },
     {
       key: 'salesCost',
-      label: (<span>تكلفة المبيعات<span style={{ marginRight: 8, color: '#888' }}>({reportCounts.salesCost})</span></span>),
+      label: `تكلفة المبيعات (${reportCounts.salesCost})`,
     },
     {
       key: 'excessInventory',
-      label: (<span>فائض المخزون<span style={{ marginRight: 8, color: '#888' }}>({reportCounts.excessInventory})</span></span>),
+      label: `فائض المخزون (${reportCounts.excessInventory})`,
     },
     {
       key: 'suppliersPayables',
-      label: (<span>استحقاق الموردين<span style={{ marginRight: 8, color: '#888' }}>({reportCounts.suppliersPayables})</span></span>),
+      label: `استحقاق الموردين (${reportCounts.suppliersPayables})`,
     },
     {
       key: 'supplierMovement',
-      label: (<span>حركة مورد<span style={{ marginRight: 8, color: '#888' }}>({reportCounts.supplierMovement})</span></span>),
+      label: `حركة مورد (${reportCounts.supplierMovement})`,
     },
   ];
 
@@ -104,7 +118,13 @@ function App() {
       case 'suppliersPayables':
         return <SuppliersPayablesPage data={processedData?.suppliersPayables} />;
       case 'supplierMovement':
-        return <SupplierMovementPage data={processedData?.supplierMovement} />;
+        return <SupplierMovementPage 
+            data={{
+                suppliersPayables: processedData?.suppliersPayables,
+                endingInventoryList: processedData?.endingInventory?.endingInventoryList,
+                excessInventory: processedData?.excessInventory,
+            }} 
+        />;
       default:
         return null;
     }

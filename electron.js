@@ -59,23 +59,24 @@ ipcMain.handle('readExcelFile', async (event, filePath) => {
     const workbook = XLSX.readFile(filePath);
     const data = {};
 
+    // قراءة البيانات مع العناوين (بدون range لتضمين السطر الأول)
     if (workbook.Sheets['مشتريات']) {
-      let rawPurchases = XLSX.utils.sheet_to_json(workbook.Sheets['مشتريات'], { header: 1, range: 1 });
+      let rawPurchases = XLSX.utils.sheet_to_json(workbook.Sheets['مشتريات'], { header: 1 });
       data.purchases = convertExcelDates(rawPurchases);
     }
 
     if (workbook.Sheets['مبيعات']) {
-      let rawSales = XLSX.utils.sheet_to_json(workbook.Sheets['مبيعات'], { header: 1, range: 1 });
+      let rawSales = XLSX.utils.sheet_to_json(workbook.Sheets['مبيعات'], { header: 1 });
       data.sales = convertExcelDates(rawSales);
     }
 
     if (workbook.Sheets['المخزون']) {
-      let rawInventory = XLSX.utils.sheet_to_json(workbook.Sheets['المخزون'], { header: 1, range: 1 });
+      let rawInventory = XLSX.utils.sheet_to_json(workbook.Sheets['المخزون'], { header: 1 });
       data.inventory = convertExcelDates(rawInventory);
     }
 
     if (workbook.Sheets['الارصدة']) {
-      let rawBalances = XLSX.utils.sheet_to_json(workbook.Sheets['الارصدة'], { header: 1, range: 1 });
+      let rawBalances = XLSX.utils.sheet_to_json(workbook.Sheets['الارصدة'], { header: 1 });
       data.balances = rawBalances;
     }
 

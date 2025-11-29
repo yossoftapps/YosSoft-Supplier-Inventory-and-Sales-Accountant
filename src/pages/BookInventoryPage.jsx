@@ -1,13 +1,68 @@
 import React from 'react';
-import { Typography } from 'antd';
+import { Typography, Table, Alert } from 'antd';
 
 const { Title } = Typography;
 
-function BookInventoryPage() {
+function BookInventoryPage({ data }) {
+    if (!data) {
+        return (
+            <div style={{ padding: '20px' }}>
+                <Alert message="لا توجد بيانات" description="يرجى استيراد ملف Excel أولاً لمعالجة البيانات." type="info" showIcon />
+            </div>
+        );
+    }
+
+    // تم تعريف الأعمدة بناءً على المخرجات النهائية للمنطق المحدث
+    const columns = [
+        { title: 'م', dataIndex: 'م', key: 'م', width: 60, align: 'center' },
+        { title: 'رمز المادة', dataIndex: 'رمز المادة', key: 'رمز المادة', width: 120 },
+        { title: 'اسم المادة', dataIndex: 'اسم المادة', key: 'اسم المادة' },
+        { title: 'الوحدة', dataIndex: 'الوحدة', key: 'الوحدة', width: 80, align: 'center' },
+        {
+            title: 'الكمية', dataIndex: 'الكمية', key: 'الكمية', width: 100, align: 'left',
+            render: (text) => (parseFloat(text) || 0).toFixed(2)
+        },
+        { title: 'تاريخ الصلاحية', dataIndex: 'تاريخ الصلاحية', key: 'تاريخ الصلاحية', width: 120 },
+        {
+            title: 'الافرادي', dataIndex: 'الافرادي', key: 'الافرادي', width: 80, align: 'left',
+            render: (text) => (parseInt(text, 10) || 0).toLocaleString('ar-EG')
+        },
+        { title: 'تاريخ الشراء', dataIndex: 'تاريخ الشراء', key: 'تاريخ الشراء', width: 120 },
+        { title: 'المورد', dataIndex: 'المورد', key: 'المورد' },
+        { title: 'نوع العملية', dataIndex: 'نوع العملية', key: 'نوع العملية', width: 100, align: 'center' },
+        { title: 'ملاحظات', dataIndex: 'ملاحظات', key: 'ملاحظات', width: 120, align: 'center' },
+        {
+            title: 'كمية المبيعات', dataIndex: 'كمية المبيعات', key: 'كمية المبيعات', width: 120, align: 'left',
+            render: (text) => (parseFloat(text) || 0).toFixed(2)
+        },
+    ];
+
     return (
-        <div>
-            <Title level={4}>هذه صفحة [المخزون الدفتري] قيد التطوير.</Title>
-            <p>سيتم عرض البيانات هنا قريبًا.</p>
+        <div style={{ padding: '20px' }}>
+            <Title level={4}>تقرير الجرد الدفتري</Title>
+            <p>عرض نتيجة مطابقة صافي المبيعات مع صافي المشتريات حسب المفاتيح الأربعة المحددة.</p>
+
+            <Table
+                title={() => <strong>الجرد الدفتري ({data.length} سجل)</strong>}
+                dataSource={data}
+                columns={columns}
+                rowKey="م"
+                scroll={{ x: 1800 }}
+                pagination={{ pageSize: 25 }}
+                summary={() => (
+                    <Table.Summary.Row>
+                        <Table.Summary.Cell index={0} colSpan={4}>
+                            <strong>الإجمالي</strong>
+                        </Table.Summary.Cell>
+                        <Table.Summary.Cell index={4}>
+                            <strong>
+                                {data.reduce((sum, record) => sum + parseFloat(record['الكمية'] || 0), 0).toFixed(2)}
+                            </strong>
+                        </Table.Summary.Cell>
+                        <Table.Summary.Cell index={5} colSpan={7}></Table.Summary.Cell>
+                    </Table.Summary.Row>
+                )}
+            />
         </div>
     );
 }

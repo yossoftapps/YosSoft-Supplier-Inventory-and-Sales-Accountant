@@ -1,116 +1,211 @@
+// دالة مساعدة لتحويل مصفوفة المصفوفات إلى مصفوفة كائنات
+const convertToObjects = (data) => {
+    if (!data || data.length < 2) return [];
+    const headers = data[0];
+    return data.slice(1).map(row => {
+        const obj = {};
+        headers.forEach((header, index) => {
+            obj[header] = row[index];
+        });
+        return obj;
+    });
+};
+
+// دالة مساعدة للفرز حسب التاريخ
+const sortByDateDesc = (data, dateKey) => {
+    return data.sort((a, b) => new Date(b[dateKey]) - new Date(a[dateKey]));
+};
+
 /**
- * وظيفة لحساب صافي المبيعات عن طريق مطابقة مرتجعات المبيعات بالمبيعات
- * @param {Array} salesData - مصفوفة بيانات المبيعات (بدون عناوين الأعمدة)
- * @param {Array} returnsData - مصفوفة بيانات مرتجعات المبيعات (بدون عناوين الأعمدة)
- * @returns {Object} كائن يحتوي على قائمة المبيعات النهائية (قائمة ج) والمرتجعات اليتيمة (قائمة د)
+ * حساب صافي المبيعات بتطبيق 10 مفاتيح مطابقة حسب الأولوية كما ورد في المواصفات
+ * @param {Array} allSalesRaw - بيانات المبيعات الخام (مع العناوين)
+ * @param {Array} salesReturnsRaw - بيانات المرتجعات الخام (مع العناوين)
+ * @returns {Object} { netSalesList, orphanReturnsList }
  */
-export const calculateNetSales = (salesData, returnsData) => {
-    // تحويل البيانات إلى كائنات أسهل للتعامل معها
-    const sales = salesData.map(row => ({
-        م: row[0],
-        رمز_المادة: row[1],
-        اسم_المادة: row[2],
-        الوحدة: row[3],
-        الكمية: parseFloat(row[4]),
-        الافرادي: parseInt(row[5], 10),
-        تاريخ_الصلاحية: row[6],
-        تاريخ_العملية: row[7],
-        نوع_العملية: row[8],
-        // بيانات إضافية ستُضاف لاحقًا
-        ملاحظات: 'لايوجد مرتجع',
-        القائمة: 'C',
-        رقم_السجل: null,
+export const calculateNetSales = (allSalesRaw, salesReturnsRaw) => {
+    console.log('--- بدء معالجة صافي المبيعات ---');
+
+    // 1. تحويل البيانات إلى كائنات
+    const allSales = convertToObjects(allSalesRaw);
+    const salesReturns = convertToObjects(salesReturnsRaw);
+
+    // 2. فرز المبيعات من الأحدث إلى الأقدم
+    const sortedSales = sortByDateDesc([...allSales], 'تاريخ العملية');
+
+    // 3. إنشاء نسخة عمل من المبيعات
+    let netSalesList = sortedSales.map((s, index) => ({
+        ...s,
+        'م': index + 1, // إضافة الرقم التسلسلي مبدئياً
+        'الكمية': parseFloat(s['الكمية']),
+        'ملاحظات': 'لايوجد مرتجع',
+        'القائمة': 'C'
     }));
 
-    const returns = returnsData.map(row => ({
-        م: row[0],
-        رمز_المادة: row[1],
-        اسم_المادة: row[2],
-        الوحدة: row[3],
-        الكمية: parseFloat(row[4]),
-        الافرادي: parseInt(row[5], 10),
-        تاريخ_الصلاحية: row[6],
-        تاريخ_العملية: row[7],
-        نوع_العملية: row[8],
-    }));
+    const orphanReturnsList = [];
 
-    // فرز المبيعات والمرتجعات حسب التاريخ (الأحدث أولاً)
-    const sortedSales = sales.sort((a, b) => new Date(b.تاريخ_العملية) - new Date(a.تاريخ_العملية));
-    const sortedReturns = returns.sort((a, b) => new Date(b.تاريخ_العملية) - new Date(a.تاريخ_العملية));
+    // 4. تعريف المفاتيح العشرة حسب الأولوية للمبيعات كما ورد في المواصفات
+    // المفتاح 1:- (رمز المادة، تاريخ الصلاحية، الافرادي، الكمية)
+    // المفتاح 2:- (رمز المادة، تاريخ الصلاحية، الافرادي بعد التقريب لأقرب رقم عشري، الكمية) + تاريخ المرتجع اكبر او يساوي تاريخ البيع
+    // المفتاح 3:- (رمز المادة، تاريخ الصلاحية، الكمية) + تاريخ المرتجع اكبر او يساوي تاريخ البيع
+    // المفتاح 4:- (رمز المادة، تاريخ الصلاحية، الافرادي) + تاريخ المرتجع اكبر او يساوي تاريخ البيع
+    // المفتاح 5:- (رمز المادة، تاريخ الصلاحية، الافرادي بعد التقريب لأقرب رقم عشري) + تاريخ المرتجع اكبر او يساوي تاريخ البيع
+    // المفتاح 6:- (رمز المادة، تاريخ الصلاحية) + تاريخ المرتجع اكبر او يساوي تاريخ البيع
+    // المفتاح 7:- (رمز المادة، الافرادي، الكمية) ويُراعى تاريخ الصلاحية الأقرب فالأبعد + تاريخ المرتجع اكبر او يساوي تاريخ البيع
+    // المفتاح 8:- (رمز المادة، الافرادي) ويُراعى تاريخ الصلاحية الأقرب فالأبعد + تاريخ المرتجع اكبر او يساوي تاريخ البيع
+    // المفتاح 9:- (رمز المادة، الكمية) ويُراعى تاريخ الصلاحية الأقرب فالأبعد + تاريخ المرتجع اكبر او يساوي تاريخ البيع
+    // المفتاح 10:- (رمز المادة) ويُراعى تاريخ الصلاحية الأقرب فالأبعد + تاريخ المرتجع اكبر او يساوي تاريخ البيع
+    const getMatchingKeys = (returnRecord) => [
+        // المفتاح 1:- (رمز المادة، تاريخ الصلاحية، الافرادي، الكمية)
+        (s) => s['رمز المادة'] === returnRecord['رمز المادة'] &&
+            s['تاريخ الصلاحية'] === returnRecord['تاريخ الصلاحية'] &&
+            s['الافرادي'] === returnRecord['الافرادي'] &&
+            parseFloat(s['الكمية']) === parseFloat(returnRecord['الكمية']),
 
-    const finalSales = [];
-    const orphanReturns = [];
+        // المفتاح 2:- (رمز المادة، تاريخ الصلاحية، الافرادي بعد التقريب لأقرب رقم عشري، الكمية) + تاريخ المرتجع اكبر او يساوي تاريخ البيع
+        (s) => new Date(returnRecord['تاريخ العملية']) >= new Date(s['تاريخ العملية']) &&
+            s['رمز المادة'] === returnRecord['رمز المادة'] &&
+            s['تاريخ الصلاحية'] === returnRecord['تاريخ الصلاحية'] &&
+            Math.round(parseFloat(s['الافرادي']) * 10) / 10 === Math.round(parseFloat(returnRecord['الافرادي']) * 10) / 10 &&
+            parseFloat(s['الكمية']) === parseFloat(returnRecord['الكمية']),
 
-    // نسخ من المبيعات لتعديل الكميات
-    let workingSales = sortedSales.map(s => ({ ...s, الكمية_المتبقية: s.الكمية }));
+        // المفتاح 3:- (رمز المادة، تاريخ الصلاحية، الكمية) + تاريخ المرتجع اكبر او يساوي تاريخ البيع
+        (s) => new Date(returnRecord['تاريخ العملية']) >= new Date(s['تاريخ العملية']) &&
+            s['رمز المادة'] === returnRecord['رمز المادة'] &&
+            s['تاريخ الصلاحية'] === returnRecord['تاريخ الصلاحية'] &&
+            parseFloat(s['الكمية']) === parseFloat(returnRecord['الكمية']),
 
-    // المرحلة الأولى: استنزال المرتجعات من المبيعات
-    for (const returnItem of sortedReturns) {
-        let remainingReturnQty = returnItem.الكمية;
+        // المفتاح 4:- (رمز المادة، تاريخ الصلاحية، الافرادي) + تاريخ المرتجع اكبر او يساوي تاريخ البيع
+        (s) => new Date(returnRecord['تاريخ العملية']) >= new Date(s['تاريخ العملية']) &&
+            s['رمز المادة'] === returnRecord['رمز المادة'] &&
+            s['تاريخ الصلاحية'] === returnRecord['تاريخ الصلاحية'] &&
+            s['الافرادي'] === returnRecord['الافرادي'],
+
+        // المفتاح 5:- (رمز المادة، تاريخ الصلاحية، الافرادي بعد التقريب لأقرب رقم عشري) + تاريخ المرتجع اكبر او يساوي تاريخ البيع
+        (s) => new Date(returnRecord['تاريخ العملية']) >= new Date(s['تاريخ العملية']) &&
+            s['رمز المادة'] === returnRecord['رمز المادة'] &&
+            s['تاريخ الصلاحية'] === returnRecord['تاريخ الصلاحية'] &&
+            Math.round(parseFloat(s['الافرادي']) * 10) / 10 === Math.round(parseFloat(returnRecord['الافرادي']) * 10) / 10,
+
+        // المفتاح 6:- (رمز المادة، تاريخ الصلاحية) + تاريخ المرتجع اكبر او يساوي تاريخ البيع
+        (s) => new Date(returnRecord['تاريخ العملية']) >= new Date(s['تاريخ العملية']) &&
+            s['رمز المادة'] === returnRecord['رمز المادة'] &&
+            s['تاريخ الصلاحية'] === returnRecord['تاريخ الصلاحية'],
+
+        // المفتاح 7:- (رمز المادة، الافرادي، الكمية) ويُراعى تاريخ الصلاحية الأقرب فالأبعد + تاريخ المرتجع اكبر او يساوي تاريخ البيع
+        (s) => new Date(returnRecord['تاريخ العملية']) >= new Date(s['تاريخ العملية']) &&
+            s['رمز المادة'] === returnRecord['رمز المادة'] &&
+            s['الافرادي'] === returnRecord['الافرادي'] &&
+            parseFloat(s['الكمية']) === parseFloat(returnRecord['الكمية']),
+
+        // المفتاح 8:- (رمز المادة، الافرادي) ويُراعى تاريخ الصلاحية الأقرب فالأبعد + تاريخ المرتجع اكبر او يساوي تاريخ البيع
+        (s) => new Date(returnRecord['تاريخ العملية']) >= new Date(s['تاريخ العملية']) &&
+            s['رمز المادة'] === returnRecord['رمز المادة'] &&
+            s['الافرادي'] === returnRecord['الافرادي'],
+
+        // المفتاح 9:- (رمز المادة، الكمية) ويُراعى تاريخ الصلاحية الأقرب فالأبعد + تاريخ المرتجع اكبر او يساوي تاريخ البيع
+        (s) => new Date(returnRecord['تاريخ العملية']) >= new Date(s['تاريخ العملية']) &&
+            s['رمز المادة'] === returnRecord['رمز المادة'] &&
+            parseFloat(s['الكمية']) === parseFloat(returnRecord['الكمية']),
+
+        // المفتاح 10:- (رمز المادة) ويُراعى تاريخ الصلاحية الأقرب فالأبعد + تاريخ المرتجع اكبر او يساوي تاريخ البيع
+        (s) => new Date(returnRecord['تاريخ العملية']) >= new Date(s['تاريخ العملية']) &&
+            s['رمز المادة'] === returnRecord['رمز المادة'],
+    ];
+
+    // 5. المرور على كل مرتجع ومحاولة استنزاله من المبيعات
+    for (const returnRecord of salesReturns) {
+        let remainingReturnQty = parseFloat(returnRecord['الكمية']);
+        if (remainingReturnQty <= 0) continue;
+
         let matched = false;
+        let usedKeyNumber = -1;
 
-        // البحث عن مطابقة حسب المفاتيح (سنطبق المفتاح الأول كمثال)
-        for (let i = 0; i < workingSales.length && remainingReturnQty > 0; i++) {
-            const salesItem = workingSales[i];
+        const matchingKeys = getMatchingKeys(returnRecord);
 
-            // المفتاح الأول: (رمز المادة، تاريخ الصلاحية، الافرادي، الكمية)
-            // مع شرط تاريخ المرتجع أكبر أو يساوي تاريخ البيع
-            if (
-                new Date(returnItem.تاريخ_العملية) >= new Date(salesItem.تاريخ_العملية) &&
-                salesItem.رمز_المادة === returnItem.رمز_المادة &&
-                salesItem.تاريخ_الصلاحية === returnItem.تاريخ_الصلاحية &&
-                salesItem.الافرادي === returnItem.الافرادي &&
-                salesItem.الكمية_المتبقية > 0
-            ) {
-                matched = true;
-                const qtyToDeduct = Math.min(remainingReturnQty, salesItem.الكمية_المتبقية);
+        // جرب كل مفتاح بالترتيب
+        for (let keyIndex = 0; keyIndex < matchingKeys.length; keyIndex++) {
+            if (remainingReturnQty <= 0) break;
 
-                salesItem.الكمية_المتبقية -= qtyToDeduct;
-                salesItem.الكمية -= qtyToDeduct;
-                salesItem.ملاحظات = 'مطابق';
+            const keyFunction = matchingKeys[keyIndex];
 
-                remainingReturnQty -= qtyToDeduct;
+            // البحث عن جميع السجلات المطابقة مع هذا المفتاح
+            let matchingSales = netSalesList.filter(
+                s => s['الكمية'] > 0 && keyFunction(s)
+            );
+
+            // ترتيب السجلات المطابقة: الأحدث ثم الأقدم
+            matchingSales.sort((a, b) => {
+                const dateDiff = new Date(b['تاريخ العملية']) - new Date(a['تاريخ العملية']);
+                if (dateDiff !== 0) return dateDiff;
+                // إذا كانت التواريخ متساوية، نرتب حسب معرف السجل
+                return a['م'] - b['م'];
+            });
+
+            // ⭐ الحلقة الداخلية: استنزال من كل السجلات المطابقة بنفس المفتاح وفقاً للترتيب
+            for (const saleRecord of matchingSales) {
+                if (remainingReturnQty <= 0) break;
+
+                const saleIndex = netSalesList.findIndex(s => s['م'] === saleRecord['م']);
+                if (saleIndex === -1) continue;
+
+                const saleQty = netSalesList[saleIndex]['الكمية'];
+
+                if (saleQty >= remainingReturnQty) {
+                    // التطابق كامل: خصم كمية المرتجع بالكامل
+                    netSalesList[saleIndex]['الكمية'] -= remainingReturnQty;
+                    netSalesList[saleIndex]['ملاحظات'] = `مطابق (مفتاح ${keyIndex + 1})`;
+                    remainingReturnQty = 0;
+                    matched = true;
+                    usedKeyNumber = keyIndex + 1;
+                    break; // الانتهاء من هذا المفتاح
+                } else {
+                    // تطابق جزئي: خصم كمية المبيعات بالكامل واستمر
+                    netSalesList[saleIndex]['الكمية'] = 0;
+                    netSalesList[saleIndex]['ملاحظات'] = `مطابق جزئي (مفتاح ${keyIndex + 1})`;
+                    remainingReturnQty -= saleQty;
+                    matched = true;
+                    usedKeyNumber = keyIndex + 1;
+                }
             }
         }
 
-        // إذا لم يتم استنزال كمية المرتجع بالكامل، أضفه إلى المرتجعات اليتيمة
-        if (remainingReturnQty > 0 || !matched) {
-            orphanReturns.push({
-                ...returnItem,
-                الكمية: -Math.abs(returnItem.الكمية), // جعل الكمية سالبة
-                ملاحظات: 'غير مطابق',
-                القائمة: 'D',
+        // إذا بقيت كمية غير مطابقة، أضفها للمرتجعات اليتيمة
+        // كميات صافي المبيعات تكون موجبة والمرتجعات اليتيمة المتبقية تكون بكميات سالبة
+        if (!matched || remainingReturnQty > 0) {
+            orphanReturnsList.push({
+                ...returnRecord,
+                'الكمية': remainingReturnQty > 0 ? remainingReturnQty : parseFloat(returnRecord['الكمية']),
+                'ملاحظات': 'غير مطابق',
+                'القائمة': 'D'
             });
         }
     }
 
-    // المرحلة الثانية: بناء القائمة النهائية
-    for (const sale of workingSales) {
-        if (sale.الكمية > 0) {
-            finalSales.push({
-                ...sale,
-                // إعادة تعيين الكمية إلى القيمة الأصلية بعد التعديلات
-                الكمية: sale.الكمية_المتبقية > 0 ? sale.الكمية_المتبقية : sale.الكمية,
-            });
-        }
-    }
+    // 6. تنقية القائمة النهائية (إزالة السجلات التي كميتها صفر)
+    const finalNetSalesList = netSalesList.filter(s => s['الكمية'] > 0);
 
-    // إعادة ترتيب القائمة النهائية حسب المواصفات
-    finalSales.sort((a, b) => {
-        const dateCompare = new Date(b.تاريخ_العملية) - new Date(a.تاريخ_العملية);
+    // 7. تحديث الرقم التسلسلي ليصبح هو رقم السجل لصافي المبيعات
+    finalNetSalesList.forEach((item, index) => {
+        item['م'] = index + 1;
+    });
+
+    orphanReturnsList.forEach((item, index) => {
+        item['م'] = index + 1;
+    });
+
+    // 8. فرز القوائم النهائية
+    finalNetSalesList.sort((a, b) => {
+        const dateCompare = new Date(b['تاريخ العملية']) - new Date(a['تاريخ العملية']);
         if (dateCompare !== 0) return dateCompare;
-        const idCompare = a.م - b.م;
-        if (idCompare !== 0) return idCompare;
-        return new Date(a.تاريخ_الصلاحية) - new Date(b.تاريخ_الصلاحية);
+        return new Date(a['تاريخ الصلاحية']) - new Date(b['تاريخ الصلاحية']);
     });
 
-    // تحديث الرقم التسلسلي
-    finalSales.forEach((item, index) => {
-        item.م = index + 1;
-    });
+    console.log('--- انتهت معالجة صافي المبيعات ---');
+    console.log('صافي المبيعات (قائمة C):', finalNetSalesList.length, 'سجل');
+    console.log('المرتجعات اليتيمة (قائمة D):', orphanReturnsList.length, 'سجل');
 
     return {
-        netSalesList: finalSales, // قائمة C
-        orphanReturnsList: orphanReturns, // قائمة D
+        netSalesList: finalNetSalesList,
+        orphanReturnsList: orphanReturnsList,
     };
 };

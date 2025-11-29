@@ -1,0 +1,183 @@
+// دالة مساعدة لتحويل مصفوفة المصفوفات إلى مصفوفة كائنات
+const convertToObjects = (data) => {
+    if (!data || data.length < 2) return [];
+    const headers = data[0];
+    return data.slice(1).map(row => {
+        const obj = {};
+        headers.forEach((header, index) => {
+            obj[header] = row[index];
+        });
+        return obj;
+    });
+};
+
+// دالة مساعدة للفرز حسب التاريخ
+const sortByDateAsc = (data, dateKey) => {
+    return data.sort((a, b) => new Date(a[dateKey]) - new Date(b[dateKey]));
+};
+
+/**
+ * حساب تكلفة المبيعات بتطبيق 4 مفاتيح مطابقة حسب الأولوية كما ورد في المواصفات
+ * @param {Object} netPurchasesResult - نتيجة صافي المشتريات
+ * @param {Object} netSalesResult - نتيجة صافي المبيعات
+ * @returns {Array} قائمة بعمليات البيع مع تكلفة الشراء المطابقة
+ */
+export const calculateSalesCost = (netPurchasesResult, netSalesResult) => {
+    console.log('--- بدء حساب تكلفة المبيعات ---');
+    
+    // الحصول على قوائم البيانات
+    const purchases = [...(netPurchasesResult.netPurchasesList || [])];
+    const sales = [...(netSalesResult.netSalesList || [])];
+    
+    // فرز المشتريات حسب التاريخ تصاعدياً (الأقدم أولاً)
+    const sortedPurchases = sortByDateAsc(purchases, 'تاريخ العملية');
+    
+    // إنشاء نسخة عمل من المشتريات لتتبع الكميات المتبقية
+    const purchaseStock = sortedPurchases.map(p => ({
+        ...p,
+        remainingQuantity: parseFloat(p['الكمية']) || 0
+    }));
+    
+    // معالجة كل عملية بيع لحساب تكلفتها
+    // 3-3-04-00 حسب مفاتيح المطابقة بالترتيب التالي:-
+    // 3-3-04-01 الشرط الأساسي للمطابقة تاريخ صافي المبيعات اكبر او يساوي تاريخ صافي المشتريات
+    // 3-3-04-02 مفتاح مطابقة رقم 1:- (رمز المادة، تاريخ الصلاحية، الكمية) + تاريخ صافي المبيعات اكبر او يساوي تاريخ صافي المشتريات
+    // 3-3-04-03 مفتاح مطابقة رقم 2:- (رمز المادة، تاريخ الصلاحية) + تاريخ صافي المبيعات اكبر او يساوي تاريخ صافي المشتريات
+    // 3-3-04-04 مفتاح مطابقة رقم 3:- (رمز المادة) + تاريخ صافي المبيعات اكبر او يساوي تاريخ صافي المشتريات
+    // 3-3-04-05 مفتاح مطابقة رقم 4:- (رمز المادة) + تاريخ صافي المبيعات اصغر من تاريخ صافي المشتريات بثلاثة أيام كحد اقصى
+    
+    const getMatchingKeys = (saleRecord) => [
+        // المفتاح 1:- (رمز المادة، تاريخ الصلاحية، الكمية) + تاريخ صافي المبيعات اكبر او يساوي تاريخ صافي المشتريات
+        (p) => new Date(saleRecord['تاريخ العملية']) >= new Date(p['تاريخ العملية']) &&
+            p['رمز المادة'] === saleRecord['رمز المادة'] &&
+            p['تاريخ الصلاحية'] === saleRecord['تاريخ الصلاحية'] &&
+            parseFloat(p['الكمية']) === parseFloat(saleRecord['الكمية']),
+
+        // المفتاح 2:- (رمز المادة، تاريخ الصلاحية) + تاريخ صافي المبيعات اكبر او يساوي تاريخ صافي المشتريات
+        (p) => new Date(saleRecord['تاريخ العملية']) >= new Date(p['تاريخ العملية']) &&
+            p['رمز المادة'] === saleRecord['رمز المادة'] &&
+            p['تاريخ الصلاحية'] === saleRecord['تاريخ الصلاحية'],
+
+        // المفتاح 3:- (رمز المادة) + تاريخ صافي المبيعات اكبر او يساوي تاريخ صافي المشتريات
+        (p) => new Date(saleRecord['تاريخ العملية']) >= new Date(p['تاريخ العملية']) &&
+            p['رمز المادة'] === saleRecord['رمز المادة'],
+
+        // المفتاح 4:- (رمز المادة) + تاريخ صافي المبيعات اصغر من تاريخ صافي المشتريات بثلاثة أيام كحد اقصى
+        (p) => new Date(p['تاريخ العملية']) - new Date(saleRecord['تاريخ العملية']) <= 3 * 24 * 60 * 60 * 1000 &&
+            new Date(saleRecord['تاريخ العملية']) < new Date(p['تاريخ العملية']) &&
+            p['رمز المادة'] === saleRecord['رمز المادة'],
+    ];
+    
+    const salesWithCost = sales.map((sale, index) => {
+        const saleQuantity = parseFloat(sale['الكمية']) || 0;
+        let remainingSaleQty = saleQuantity;
+        let totalCost = 0;
+        let purchaseDetails = [];
+        let matched = false;
+        let notes = 'لايوجد مشتريات';
+        
+        const matchingKeys = getMatchingKeys(sale);
+        
+        // جرب كل مفتاح بالترتيب
+        for (let keyIndex = 0; keyIndex < matchingKeys.length; keyIndex++) {
+            if (remainingSaleQty <= 0) break;
+            
+            const keyFunction = matchingKeys[keyIndex];
+            
+            // البحث عن جميع السجلات المطابقة مع هذا المفتاح
+            let matchingPurchases = purchaseStock.filter(
+                p => p.remainingQuantity > 0 && keyFunction(p)
+            );
+            
+            // ترتيب السجلات المطابقة: الأقدم أولاً
+            matchingPurchases.sort((a, b) => new Date(a['تاريخ العملية']) - new Date(b['تاريخ العملية']));
+            
+            // ⭐ الحلقة الداخلية: استنزال من كل السجلات المطابقة بنفس المفتاح وفقاً للترتيب
+            for (const purchase of matchingPurchases) {
+                if (remainingSaleQty <= 0) break;
+                
+                // حساب الكمية التي يمكن خصمها من هذا السجل
+                const quantityToTake = Math.min(purchase.remainingQuantity, remainingSaleQty);
+                
+                // حساب تكلفة هذه الكمية
+                const unitPrice = parseFloat(purchase['الافرادي']) || 0;
+                const costOfTaken = quantityToTake * unitPrice;
+                
+                // تحديث الكمية المتبقية في سجل الشراء
+                purchase.remainingQuantity -= quantityToTake;
+                
+                // إضافة التكلفة إلى إجمالي تكلفة البيع
+                totalCost += costOfTaken;
+                
+                // تخزين تفاصيل الشراء المطابق
+                purchaseDetails.push({
+                    purchaseDate: purchase['تاريخ العملية'],
+                    purchaseUnitPrice: unitPrice,
+                    quantityMatched: quantityToTake,
+                    purchaseBatch: purchase['رقم السجل']
+                });
+                
+                // تحديث الكمية المتبقية من البيع
+                remainingSaleQty -= quantityToTake;
+                matched = true;
+                notes = 'مطابق';
+                
+                // إذا تم تغطية كامل كمية البيع، نتوقف
+                if (remainingSaleQty <= 0) break;
+            }
+            
+            // إذا تم العثور على مطابقة، نتوقف عن تجربة المفاتيح الأخرى
+            if (matched) break;
+        }
+        
+        // حساب القيم المطلوبة
+        const saleUnitPrice = parseFloat(sale['الافرادي']) || 0;
+        const totalSaleValue = saleQuantity * saleUnitPrice;
+        const totalProfit = totalSaleValue - totalCost;
+        const profitMargin = totalCost > 0 ? (totalProfit / totalCost) * 100 : 0;
+        const saleDate = new Date(sale['تاريخ العملية']);
+        const purchaseDate = purchaseDetails.length > 0 ? new Date(purchaseDetails[0].purchaseDate) : null;
+        const inventoryAge = purchaseDate ? Math.floor((saleDate - purchaseDate) / (1000 * 60 * 60 * 24)) : 0;
+        
+        // تحديد حالة الربحية
+        let profitabilityStatus = 'مطابق';
+        if (totalProfit > 0) {
+            profitabilityStatus = 'ربح';
+        } else if (totalProfit < 0) {
+            profitabilityStatus = 'خسارة';
+        }
+        
+        // تحديد الملاحظات
+        if (remainingSaleQty > 0 && matched) {
+            notes = 'لا يوجد مشتريات كافية';
+        } else if (!matched) {
+            notes = 'لايوجد مشتريات';
+        }
+        
+        return {
+            'م': index + 1,
+            'رمز المادة': sale['رمز المادة'],
+            'اسم المادة': sale['اسم المادة'],
+            'الوحدة': sale['الوحدة'],
+            'الكمية': saleQuantity.toFixed(2),
+            'تاريخ الصلاحية': sale['تاريخ الصلاحية'],
+            'تاريخ العملية': sale['تاريخ العملية'],
+            'افرادي': saleUnitPrice.toFixed(0),
+            'افرادي الشراء': totalCost > 0 ? (totalCost / saleQuantity).toFixed(0) : '0',
+            'تاريخ الشراء': purchaseDetails.length > 0 ? purchaseDetails[0].purchaseDate : '',
+            'المورد': purchaseDetails.length > 0 ? purchaseDetails[0].purchaseBatch : '',
+            'رقم السجل': sale['رقم السجل'],
+            'افرادي الربح': (saleUnitPrice - (totalCost / saleQuantity || 0)).toFixed(0),
+            'نسبة الربح': profitMargin.toFixed(2),
+            'اجمالي الربح': totalProfit.toFixed(0),
+            'عمر العملية': inventoryAge.toString(),
+            'بيان الربحية': profitabilityStatus,
+            'ملاحظات': notes
+        };
+    });
+    
+    console.log('--- انتهت عملية حساب تكلفة المبيعات ---');
+    console.log('عدد عمليات البيع مع التكلفة:', salesWithCost.length, 'عملية');
+    
+    return salesWithCost;
+};
