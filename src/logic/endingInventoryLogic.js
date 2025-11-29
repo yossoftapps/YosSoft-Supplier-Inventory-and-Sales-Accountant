@@ -4,7 +4,7 @@ const sortByExpiryAsc = (data) => {
 };
 
 // دالة مساعدة لحساب الأعمدة الإضافية في المخزون النهائي (نسخة مصححة وواضحة)
-function calculateAdditionalFields(item) {
+function calculateAdditionalFields(item, excessInventoryMap) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -32,8 +32,14 @@ function calculateAdditionalFields(item) {
     }
     item['بيان الصلاحية'] = validityStatus;
 
-    // 3. حساب الحالة
-    const movementStatus = item['بيان الحركة'] || 'غير محدد';
+    // 3. حساب بيان الحركة من تقرير فائض المخزون
+    let movementStatus = 'غير محدد';
+    if (excessInventoryMap && excessInventoryMap.has(item['رمز المادة'])) {
+        movementStatus = excessInventoryMap.get(item['رمز المادة'])['بيان الفائض'] || 'غير محدد';
+    }
+    item['بيان الحركة'] = movementStatus;
+
+    // 4. حساب الحالة
     let conditionStatus = 'جيد'; // القيمة الافتراضية
 
     // أولوية لبيان الصلاحية
@@ -52,7 +58,7 @@ function calculateAdditionalFields(item) {
     }
     item['الحالة'] = conditionStatus;
 
-    // 4. حساب البيان النهائي (بناءً على الأولوية)
+    // 5. حساب البيان النهائي (بناءً على الأولوية)
     let finalStatus = 'مناسب'; // القيمة الافتراضية
 
     if (validityStatus === 'منتهي') {
@@ -72,6 +78,68 @@ function calculateAdditionalFields(item) {
         else finalStatus = 'مناسب';
     }
     item['البيان'] = finalStatus;
+    
+    // 6. حساب فائض المخزون لكل سجل في المخزون النهائي
+    if (excessInventoryMap && excessInventoryMap.has(item['رمز المادة'])) {
+        const excessItem = excessInventoryMap.get(item['رمز المادة']);
+        const totalInventory = excessItem['الكمية'] || 0;
+        const excess = excessItem['فائض المخزون'] || 0;
+        
+        // حساب نسبة ما يمثله كل سجل من المخزون
+        if (totalInventory > 0) {
+            const ratio = item['الكمية'] / totalInventory;
+            item['فائض المخزون'] = excess * ratio;
+        } else {
+            item['فائض المخزون'] = 0;
+        }
+    } else {
+        item['فائض المخزون'] = 0;
+    }
+}
+
+// دالة مساعدة آمنة لتعديل الكميات
+function safeModifyQuantity(record, fieldName, adjustment) {
+    if (!record || typeof record[fieldName] !== 'number') {
+        console.warn('Invalid record or field for quantity modification', record, fieldName);
+        return false;
+    }
+    
+    const oldValue = record[fieldName];
+    const newValue = oldValue + adjustment;
+    
+    // التحقق من أن القيمة الجديدة غير سالبة (إذا كان ذلك مطلوبًا)
+    if (newValue < 0) {
+        console.warn(`Attempt to set negative quantity: ${fieldName} from ${oldValue} to ${newValue}`);
+        return false;
+    }
+    
+    record[fieldName] = newValue;
+    console.log(`Modified ${fieldName}: ${oldValue} -> ${newValue} (adjustment: ${adjustment})`);
+    return true;
+}
+
+// دالة لتقسيم السجل إلى سجلين عند الحاجة
+function splitRecord(record, splitQuantity) {
+    if (splitQuantity <= 0 || splitQuantity >= record['الكمية']) {
+        console.warn('Invalid split quantity', splitQuantity, record['الكمية']);
+        return null;
+    }
+    
+    // السجل الأول بالكمية المقسمة
+    const firstRecord = {
+        ...record,
+        الكمية: splitQuantity,
+        'الاجمالي': record['الافرادي'] * splitQuantity,
+    };
+    
+    // السجل الثاني بالكمية المتبقية
+    const secondRecord = {
+        ...record,
+        الكمية: record['الكمية'] - splitQuantity,
+        'الاجمالي': record['الافرادي'] * (record['الكمية'] - splitQuantity),
+    };
+    
+    return { firstRecord, secondRecord };
 }
 
 export const calculateEndingInventory = (netPurchasesData, physicalInventoryData, excessInventoryData) => {
@@ -91,18 +159,27 @@ export const calculateEndingInventory = (netPurchasesData, physicalInventoryData
   const sortedPurchases = sortByExpiryAsc([...netPurchasesList]);
   const endingInventoryList = [];
 
-  // 3. المرور على كل سجل في الجرد الفعلي ومطابقته
+  // 3. إنشاء خريطة من تقرير فائض المخزون للوصول السريع للبيانات
+  const excessInventoryMap = new Map();
+  if (excessInventoryData) {
+      excessInventoryData.forEach(item => {
+          excessInventoryMap.set(item['رمز المادة'], item);
+      });
+  }
+
+  // 4. المرور على كل سجل في الجرد الفعلي ومطابقته
   for (const physicalRecord of physicalInventoryList) {
     let remainingPhysicalQty = physicalRecord['الكمية'];
+    let physicalRecordRef = physicalRecord; // مرجع للسجل الأصلي
     
     // نستمر في البحث عن مطابقات حتى تستهلك كمية الجرد الفعلي بالكامل
     while (remainingPhysicalQty > 0) {
-      const purchaseRecord = findMatchingPurchase(physicalRecord, sortedPurchases);
+      const purchaseRecord = findMatchingPurchase(physicalRecordRef, sortedPurchases);
 
       if (!purchaseRecord) {
         // لم يتم العثور على أي مشتريات مطابقة للكمية المتبقية
         const finalRecord = {
-          ...physicalRecord,
+          ...physicalRecordRef,
           الكمية: remainingPhysicalQty,
           ملاحظات: 'لايوجد مشتريات',
           المورد: '', // لا يوجد مورد
@@ -119,53 +196,143 @@ export const calculateEndingInventory = (netPurchasesData, physicalInventoryData
       const availablePurchaseQty = purchaseRecord['الكمية'] - purchaseRecord['كمية الجرد'];
       const matchedQty = Math.min(remainingPhysicalQty, availablePurchaseQty);
 
-      // تحديث سجل المشتريات
-      purchaseRecord['كمية الجرد'] += matchedQty;
-      purchaseRecord['ملاحظات'] = 'مخزون فعلي';
-      purchaseRecord['رقم السجل'] = physicalRecord['م'];
+      // إذا كانت كمية الجرد الفعلي أكبر من كمية صافي المشتريات في أول سجل مطابق
+      if (remainingPhysicalQty > availablePurchaseQty) {
+          // ينقسم سجل الجرد الفعلي إلى سجلين
+          const splitResult = splitRecord(physicalRecordRef, availablePurchaseQty);
+          if (splitResult) {
+              // السجل الأول مطابق لنفس كمية صافي المشتريات ويحمل جميع بيانات سجل صافي المشتريات
+              const { firstRecord, secondRecord } = splitResult;
+              
+              // تحديث سجل المشتريات
+              safeModifyQuantity(purchaseRecord, 'كمية الجرد', availablePurchaseQty);
+              purchaseRecord['ملاحظات'] = 'مخزون فعلي';
+              purchaseRecord['رقم السجل'] = firstRecord['م']; // رقم سجل الجرد الفعلي المطابق
 
-      // إنشاء سجل في المخزون النهائي
-      const endingRecord = {
-        // بيانات من الجرد الفعلي
-        م: physicalRecord['م'],
-        'رمز المادة': physicalRecord['رمز المادة'],
-        'اسم المادة': physicalRecord['اسم المادة'],
-        'الوحدة': physicalRecord['الوحدة'],
-        الكمية: matchedQty,
-        'تاريخ الصلاحية': physicalRecord['تاريخ الصلاحية'],
-        القائمة: physicalRecord['القائمة'],
-        'رقم السجل': physicalRecord['رقم السجل'],
-        
-        // بيانات مضافة من المشتريات المطابقة
-        المورد: purchaseRecord['المورد'],
-        'تاريخ الشراء': purchaseRecord['تاريخ العملية'],
-        الافرادي: purchaseRecord['الافرادي'],
-        الاجمالي: purchaseRecord['الافرادي'] * matchedQty,
-        'نوع العملية': purchaseRecord['نوع العملية'],
-        ملاحظات: 'مطابق',
-      };
-      endingInventoryList.push(endingRecord);
+              // إنشاء سجل في المخزون النهائي
+              const endingRecord = {
+                // بيانات من الجرد الفعلي
+                م: firstRecord['م'],
+                'رمز المادة': firstRecord['رمز المادة'],
+                'اسم المادة': firstRecord['اسم المادة'],
+                'الوحدة': firstRecord['الوحدة'],
+                الكمية: availablePurchaseQty,
+                'تاريخ الصلاحية': firstRecord['تاريخ الصلاحية'],
+                القائمة: firstRecord['القائمة'],
+                'رقم السجل': purchaseRecord['م'], // رقم سجل المشتريات المطابق
+                
+                // بيانات مضافة من المشتريات المطابقة
+                المورد: purchaseRecord['المورد'],
+                'تاريخ الشراء': purchaseRecord['تاريخ العملية'],
+                الافرادي: purchaseRecord['الافرادي'],
+                الاجمالي: purchaseRecord['الافرادي'] * availablePurchaseQty,
+                'نوع العملية': purchaseRecord['نوع العملية'],
+                ملاحظات: 'مطابق',
+              };
+              endingInventoryList.push(endingRecord);
 
-      remainingPhysicalQty -= matchedQty;
+              // تحديث الكمية المتبقية
+              remainingPhysicalQty -= availablePurchaseQty;
+              physicalRecordRef = secondRecord; // السجل الثاني بالكمية الزيادة يمر بنفس الخطوات
+              continue;
+          }
+      }
+      // إذا كانت كمية الجرد الفعلي أقل من كمية صافي المشتريات في أول سجل مطابق
+      else if (remainingPhysicalQty < availablePurchaseQty) {
+          // ينقسم سجل صافي المشتريات إلى سجلين
+          const splitResult = splitRecord(purchaseRecord, remainingPhysicalQty);
+          if (splitResult) {
+              const { firstRecord, secondRecord } = splitResult;
+              
+              // تحديث السجل الأول
+              firstRecord['كمية الجرد'] = remainingPhysicalQty;
+              firstRecord['ملاحظات'] = 'مخزون فعلي';
+              firstRecord['رقم السجل'] = physicalRecordRef['م']; // رقم سجل الجرد الفعلي المطابق
+
+              // إنشاء سجل في المخزون النهائي
+              const endingRecord = {
+                // بيانات من الجرد الفعلي
+                م: physicalRecordRef['م'],
+                'رمز المادة': physicalRecordRef['رمز المادة'],
+                'اسم المادة': physicalRecordRef['اسم المادة'],
+                'الوحدة': physicalRecordRef['الوحدة'],
+                الكمية: remainingPhysicalQty,
+                'تاريخ الصلاحية': physicalRecordRef['تاريخ الصلاحية'],
+                القائمة: physicalRecordRef['القائمة'],
+                'رقم السجل': firstRecord['م'], // رقم سجل المشتريات المطابق
+                
+                // بيانات مضافة من المشتريات المطابقة
+                المورد: firstRecord['المورد'],
+                'تاريخ الشراء': firstRecord['تاريخ العملية'],
+                الافرادي: firstRecord['الافرادي'],
+                الاجمالي: firstRecord['الافرادي'] * remainingPhysicalQty,
+                'نوع العملية': firstRecord['نوع العملية'],
+                ملاحظات: 'مطابق',
+              };
+              endingInventoryList.push(endingRecord);
+
+              // استبدال السجل الأصلي بالسجل الثاني في القائمة
+              const index = sortedPurchases.indexOf(purchaseRecord);
+              if (index !== -1) {
+                  sortedPurchases[index] = secondRecord;
+              }
+              
+              remainingPhysicalQty = 0;
+              break;
+          }
+      }
+      // إذا كانت كمية الجرد الفعلي تساوي تماما كمية صافي المشتريات
+      else {
+          // تحديث سجل المشتريات
+          safeModifyQuantity(purchaseRecord, 'كمية الجرد', matchedQty);
+          purchaseRecord['ملاحظات'] = 'مخزون فعلي';
+          purchaseRecord['رقم السجل'] = physicalRecordRef['م']; // رقم سجل الجرد الفعلي المطابق
+
+          // إنشاء سجل في المخزون النهائي
+          const endingRecord = {
+            // بيانات من الجرد الفعلي
+            م: physicalRecordRef['م'],
+            'رمز المادة': physicalRecordRef['رمز المادة'],
+            'اسم المادة': physicalRecordRef['اسم المادة'],
+            'الوحدة': physicalRecordRef['الوحدة'],
+            الكمية: matchedQty,
+            'تاريخ الصلاحية': physicalRecordRef['تاريخ الصلاحية'],
+            القائمة: physicalRecordRef['القائمة'],
+            'رقم السجل': purchaseRecord['م'], // رقم سجل المشتريات المطابق
+            
+            // بيانات مضافة من المشتريات المطابقة
+            المورد: purchaseRecord['المورد'],
+            'تاريخ الشراء': purchaseRecord['تاريخ العملية'],
+            الافرادي: purchaseRecord['الافرادي'],
+            الاجمالي: purchaseRecord['الافرادي'] * matchedQty,
+            'نوع العملية': purchaseRecord['نوع العملية'],
+            ملاحظات: 'مطابق',
+          };
+          endingInventoryList.push(endingRecord);
+
+          remainingPhysicalQty = 0;
+      }
     }
   }
 
-  // 4. إضافة قائمة ب (مرتجع المشتريات اليتيمة) إلى التقرير النهائي
+  // 5. إضافة قائمة ب (مرتجع المشتريات اليتيمة) إلى التقرير النهائي
   const listB = netPurchasesData.orphanReturnsList.map(item => ({
     ...item,
     القائمة: 'B', // تحديد القائمة
     // إضافة أعمدة فارغة للمطابقة مع هيكل الجدول
-    'تاريخ الشراء': '',
-    'المورد': '',
-    'الاجمالي': 0,
+    'تاريخ الشراء': item['تاريخ العملية'],
+    'المورد': item['المورد'],
+    'الافرادي': item['الافرادي'],
+    'الاجمالي': item['الافرادي'] * item['الكمية'],
     'بيان الحركة': '',
+    'رقم السجل': null,
   }));
 
-  // 5. حساب الأعمدة الإضافية للقائمة النهائية
-  endingInventoryList.forEach(item => calculateAdditionalFields(item));
-  listB.forEach(item => calculateAdditionalFields(item));
+  // 6. حساب الأعمدة الإضافية للقائمة النهائية
+  endingInventoryList.forEach(item => calculateAdditionalFields(item, excessInventoryMap));
+  listB.forEach(item => calculateAdditionalFields(item, excessInventoryMap));
 
-  // 6. فرز القائمة النهائية حسب رمز المادة ثم تاريخ الصلاحية
+  // 7. فرز القائمة النهائية حسب رمز المادة ثم تاريخ الصلاحية
   const finalList = [...endingInventoryList, ...listB];
   finalList.sort((a, b) => {
     if (a['رمز المادة'] !== b['رمز المادة']) {
@@ -174,13 +341,16 @@ export const calculateEndingInventory = (netPurchasesData, physicalInventoryData
     return new Date(a['تاريخ الصلاحية']) - new Date(b['تاريخ الصلاحية']);
   });
 
-  // 7. تحديث الأرقام التسلسلية النهائية
+  // 8. تحديث الأرقام التسلسلية النهائية
   finalList.forEach((item, index) => {
     item['م'] = index + 1;
-    item['رقم السجل'] = (index + 1).toString();
+    // الحفاظ على رقم السجل كمرجع للمطابقة
+    if (!item['رقم السجل']) {
+        item['رقم السجل'] = (index + 1).toString();
+    }
   });
 
-  // 8. فصل القائمة النهائية مرة أخرى بعد الفرز والتحديث
+  // 9. فصل القائمة النهائية مرة أخرى بعد الفرز والتحديث
   const finalEndingInventoryList = finalList.filter(item => item['القائمة'] !== 'B');
   const finalListB = finalList.filter(item => item['القائمة'] === 'B');
 

@@ -63,21 +63,25 @@ ipcMain.handle('readExcelFile', async (event, filePath) => {
     if (workbook.Sheets['مشتريات']) {
       let rawPurchases = XLSX.utils.sheet_to_json(workbook.Sheets['مشتريات'], { header: 1 });
       data.purchases = convertExcelDates(rawPurchases);
+      console.log('Purchases sheet loaded:', data.purchases.length, 'rows');
     }
 
     if (workbook.Sheets['مبيعات']) {
       let rawSales = XLSX.utils.sheet_to_json(workbook.Sheets['مبيعات'], { header: 1 });
       data.sales = convertExcelDates(rawSales);
+      console.log('Sales sheet loaded:', data.sales.length, 'rows');
     }
 
     if (workbook.Sheets['المخزون']) {
       let rawInventory = XLSX.utils.sheet_to_json(workbook.Sheets['المخزون'], { header: 1 });
-      data.inventory = convertExcelDates(rawInventory);
+      data.physicalInventory = convertExcelDates(rawInventory);
+      console.log('Inventory sheet loaded:', data.physicalInventory.length, 'rows');
     }
 
     if (workbook.Sheets['الارصدة']) {
       let rawBalances = XLSX.utils.sheet_to_json(workbook.Sheets['الارصدة'], { header: 1 });
-      data.balances = rawBalances;
+      data.supplierbalances = rawBalances;
+      console.log('Balances sheet loaded:', data.supplierbalances.length, 'rows');
     }
 
     return { success: true, data };
