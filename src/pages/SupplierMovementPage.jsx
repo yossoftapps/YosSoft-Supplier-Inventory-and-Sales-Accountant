@@ -1,0 +1,172 @@
+import React, { useState, useMemo } from 'react';
+import { Typography, Select, Card, Row, Col, Table, Alert } from 'antd';
+
+const { Title } = Typography;
+const { Option } = Select;
+
+function SupplierMovementPage({ data }) {
+    const [selectedSupplier, setSelectedSupplier] = useState(null);
+
+    // 1. إنشاء قائمة فريدة من أسماء الموردين للقائمة المنسدلة
+    const supplierOptions = useMemo(() => {
+        if (!data?.suppliersPayables) return [];
+        const uniqueSuppliers = [...new Set(data.suppliersPayables.map(item => item['المورد']))];
+        return uniqueSuppliers.map(supplier => ({ value: supplier, label: supplier }));
+    }, [data?.suppliersPayables]);
+
+    // 2. العثور على بيانات المورد المحدد من تقرير استحقاق الموردين
+    const selectedSupplierPayable = useMemo(() => {
+        if (!selectedSupplier || !data?.suppliersPayables) return null;
+        return data.suppliersPayables.find(item => item['المورد'] === selectedSupplier);
+    }, [selectedSupplier, data?.suppliersPayables]);
+
+    // 3. تصفية قائمة المخزون النهائي للمورد المحدد
+    const supplierInventory = useMemo(() => {
+        if (!selectedSupplier || !data?.endingInventoryList) return [];
+        return data.endingInventoryList.filter(item => item['المورد'] === selectedSupplier);
+    }, [selectedSupplier, data?.endingInventoryList]);
+
+    // 4. إنشاء خريطة لمبيعات كل صنف (للوصول السريع)
+    const salesMap = useMemo(() => {
+        if (!data?.excessInventory) return new Map();
+        return new Map(data.excessInventory.map(item => [item['رمز المادة'], item['المبيعات']]));
+    }, [data?.excessInventory]);
+
+    // 5. إعداد البيانات لجداول التفاصيل مع حساب الحقول الإضافية
+    const detailedInventoryData = useMemo(() => {
+        return supplierInventory.map(item => {
+            const purchaseDate = new Date(item['تاريخ الشراء']);
+            const today = new Date();
+            const ageInDays = item['تاريخ الشراء'] ? Math.floor((today - purchaseDate) / (1000 * 60 * 60 * 24)) : 0;
+            const salesForItem = salesMap.get(item['رمز المادة']) || 0;
+
+            return {
+                ...item,
+                'عمر الصنف': ageInDays,
+                'مبيعات الصنف': salesForItem,
+            };
+        });
+    }, [supplierInventory, salesMap]);
+    
+    // 6. تصفية الأصناف المعدة للإرجاع
+    const returnableInventoryData = useMemo(() => {
+        return detailedInventoryData.filter(item => item['بيان الحركة'] === 'راكد تماما' || item['بيان الحركة'] === 'مخزون زائد' || item['بيان الصلاحية'] === 'منتهي' || item['بيان الصلاحية'] === 'قريب جدا');
+    }, [detailedInventoryData]);
+
+
+    // تعريف أعمدة جداول التفاصيل
+    const detailColumns = [
+        { title: 'م', dataIndex: 'م', key: 'م', width: 60, align: 'center' },
+        { title: 'رمز المادة', dataIndex: 'رمز المادة', key: 'رمز المادة', width: 120 },
+        { title: 'اسم المادة', dataIndex: 'اسم المادة', key: 'اسم المادة' },
+        { title: 'الوحدة', dataIndex: 'الوحدة', key: 'الوحدة', width: 80, align: 'center' },
+        { title: 'الكمية', dataIndex: 'الكمية', key: 'الكمية', width: 100, align: 'left',
+            render: (text) => (parseFloat(text) || 0).toFixed(2)
+        },
+        { title: 'افرادي الشراء', dataIndex: 'افرادي', key: 'افرادي', width: 90, align: 'left',
+            render: (text) => (parseInt(text, 10) || 0).toLocaleString('ar-EG')
+        },
+        { title: 'اجمالي الشراء', dataIndex: 'الاجمالي', key: 'الاجمالي', width: 110, align: 'left',
+            render: (text) => (parseInt(text, 10) || 0).toLocaleString('ar-EG')
+        },
+        { title: 'تاريخ الصلاحية', dataIndex: 'تاريخ الصلاحية', key: 'تاريخ الصلاحية', width: 120 },
+        { title: 'عمر الصنف', dataIndex: 'عمر الصنف', key: 'عمر الصنف', width: 100, align: 'center' },
+        { title: 'مبيعات الصنف', dataIndex: 'مبيعات الصنف', key: 'مبيعات الصنف', width: 100, align: 'left',
+            render: (text) => (parseFloat(text) || 0).toFixed(2)
+        },
+        { title: 'بيان الصلاحية', dataIndex: 'بيان الصلاحية', key: 'بيان الصلاحية', width: 100, align: 'center' },
+        { title: 'بيان الحركة', dataIndex: 'بيان الحركة', key: 'بيان الحركة', width: 100, align: 'center' },
+        { title: 'البيان', dataIndex: 'البيان', key: 'البيان', width: 150, align: 'center' },
+    ];
+
+    if (!data) {
+        return (
+            <div style={{ padding: '20px' }}>
+                <Alert message="لا توجد بيانات" description="يرجى استيراد ملف Excel أولاً لمعالجة البيانات." type="info" showIcon />
+            </div>
+        );
+    }
+
+    return (
+        <div style={{ padding: '20px' }}>
+            <Title level={4}>تقرير حركة مورد</Title>
+            <p>اختر موردًا لعرض تفاصيل الأصناف والإجماليات الخاصة به.</p>
+
+            <Select
+                showSearch
+                style={{ width: '100%', maxWidth: 400, marginBottom: 24 }}
+                placeholder="ابحث واختر اسم المورد"
+                optionFilterProp="children"
+                onChange={setSelectedSupplier}
+                filterOption={(input, option) =>
+                    option.children.toLowerCase().indexOf(input.toLowerCase()) >= 0
+                }
+            >
+                {supplierOptions.map(supplier => (
+                    <Option key={supplier.value} value={supplier.value}>
+                        {supplier.label}
+                    </Option>
+                ))}
+            </Select>
+
+            {selectedSupplier && selectedSupplierPayable && (
+                <>
+                    {/* القسم الأول: الاجماليات */}
+                    <Card title="تقرير اجمالي المورد" style={{ marginBottom: 24 }}>
+                        <Row gutter={16}>
+                            <Col span={4}><strong>رصيد المورد:</strong></Col>
+                            <Col span={4}>{parseInt(selectedSupplierPayable['الرصيد'] || 0).toLocaleString('ar-EG')}</Col>
+                            
+                            <Col span={4}><strong>قيمة المخزون:</strong></Col>
+                            <Col span={4}>{parseInt(selectedSupplierPayable['قيمة المخزون'] || 0).toLocaleString('ar-EG')}</Col>
+
+                            <Col span={4}><strong>الاستحقاق:</strong></Col>
+                            <Col span={4}>{parseInt(selectedSupplierPayable['الاستحقاق'] || 0).toLocaleString('ar-EG')}</Col>
+                        </Row>
+                        <Row gutter={16} style={{ marginTop: 16 }}>
+                            <Col span={4}><strong>المبلغ المستحق:</strong></Col>
+                            <Col span={4}>{parseInt(selectedSupplierPayable['المبلغ المستحق'] || 0).toLocaleString('ar-EG')}</Col>
+
+                            <Col span={4}><strong>قيمة المخزون الراكد:</strong></Col>
+                            <Col span={4}>{parseInt(selectedSupplierPayable['راكد تماما'] || 0).toLocaleString('ar-EG')}</Col>
+
+                            <Col span={4}><strong>قيمة المخزون الزائد:</strong></Col>
+                            <Col span={4}>{parseInt(selectedSupplierPayable['مخزون زائد'] || 0).toLocaleString('ar-EG')}</Col>
+                        </Row>
+                        <Row gutter={16} style={{ marginTop: 16 }}>
+                            <Col span={4}><strong>قيمة الاحتياج:</strong></Col>
+                            <Col span={4}>{parseInt(selectedSupplierPayable['الاحتياج'] || 0).toLocaleString('ar-EG')}</Col>
+
+                            <Col span={4}><strong>قيمة المعد للارجاع:</strong></Col>
+                            <Col span={4}>{parseInt(selectedSupplierPayable['معد للارجاع'] || 0).toLocaleString('ar-EG')}</Col>
+                        </Row>
+                    </Card>
+
+                    {/* القسم الثاني: تفاصيل الأصناف */}
+                    <Card title={`تقرير مخزون مورد (${detailedInventoryData.length} صنف)`} style={{ marginBottom: 24 }}>
+                        <Table
+                            dataSource={detailedInventoryData}
+                            columns={detailColumns}
+                            rowKey="م"
+                            scroll={{ x: 1800 }}
+                            pagination={{ pageSize: 10 }}
+                        />
+                    </Card>
+
+                    {/* القسم الثالث: تفاصيل الأصناف المعدة للإرجاع */}
+                    <Card title={`تقرير مخزون مورد معد للارجاع (${returnableInventoryData.length} صنف)`}>
+                        <Table
+                            dataSource={returnableInventoryData}
+                            columns={detailColumns}
+                            rowKey="م"
+                            scroll={{ x: 1800 }}
+                            pagination={{ pageSize: 10 }}
+                        />
+                    </Card>
+                </>
+            )}
+        </div>
+    );
+}
+
+export default SupplierMovementPage;

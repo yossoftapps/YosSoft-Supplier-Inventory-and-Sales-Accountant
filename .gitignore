@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+
+# Logs
+*.log
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+
+# Temporary files
+*.tmp
+*.temp
+
+# Large binary files
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Electron build artifacts
+release/
+*.asar
+*.app
+*.dmg
+*.deb
+*.rpm
+*.snap
+*.AppImage
