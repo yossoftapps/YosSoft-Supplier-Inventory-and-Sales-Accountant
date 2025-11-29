@@ -97,9 +97,24 @@ function createWindow() {
     height: 800,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
+      // Add Content Security Policy to address security warnings
+      sandbox: false, // Required for IPC communication
     },
   });
-  mainWindow.loadURL('http://localhost:3001');
+  
+  // Set Content Security Policy
+  mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': [
+          "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self'; media-src 'self'; object-src 'none'; child-src 'self'; frame-src 'self';"
+        ]
+      }
+    });
+  });
+  
+  mainWindow.loadFile('dist/index.html');
   mainWindow.webContents.openDevTools();
 }
 
@@ -110,6 +125,9 @@ app.whenReady().then(() => {
       createWindow();
     }
   });
+}).catch(err => {
+  console.error('Failed to create window:', err);
+  console.error('Error details:', err.message, err.stack);
 });
 
 app.on('window-all-closed', () => {

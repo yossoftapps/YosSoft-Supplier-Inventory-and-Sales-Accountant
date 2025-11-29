@@ -6,6 +6,6 @@ export default defineConfig({
   base: './',
   server: {
     port: 3001, // Starting port, Vite will use next available if taken
-    strictPort: false // Allow Vite to use another port if 3001 is taken
+    strictPort: true // Force Vite to use port 3001
   }
 })

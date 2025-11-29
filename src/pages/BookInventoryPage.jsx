@@ -1,9 +1,58 @@
-import React from 'react';
-import { Typography, Table, Alert } from 'antd';
+import React, { useRef } from 'react';
+import { Typography, Table, Alert, Button, Space, message } from 'antd';
 
 const { Title } = Typography;
 
 function BookInventoryPage({ data }) {
+    const printRef = useRef();
+
+    const handlePrint = () => {
+        const printContent = printRef.current;
+        const originalContents = document.body.innerHTML;
+        
+        document.body.innerHTML = printContent.innerHTML;
+        window.print();
+        document.body.innerHTML = originalContents;
+        window.location.reload();
+    };
+
+    const handleExportCSV = () => {
+        try {
+            if (!data || data.length === 0) {
+                message.warning('لا توجد بيانات للتصدير');
+                return;
+            }
+
+            // إنشاء محتوى CSV
+            const headers = Object.keys(data[0]).join(',');
+            const rows = data.map(row => 
+                Object.values(row).map(value => {
+                    // التعامل مع القيم التي تحتوي على فواصل
+                    const stringValue = String(value || '');
+                    return stringValue.includes(',') ? `"${stringValue}"` : stringValue;
+                }).join(',')
+            );
+            
+            const csvContent = [headers, ...rows].join('\n');
+            
+            // إنشاء ملف CSV وتنزيله
+            const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.setAttribute('href', url);
+            link.setAttribute('download', `تقرير_الجرد_الدفتري_${new Date().toISOString().slice(0, 10)}.csv`);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            message.success('تم تصدير البيانات بنجاح');
+        } catch (error) {
+            console.error('خطأ في تصدير CSV:', error);
+            message.error('حدث خطأ أثناء تصدير البيانات');
+        }
+    };
+
     if (!data) {
         return (
             <div style={{ padding: '20px' }}>
@@ -38,9 +87,14 @@ function BookInventoryPage({ data }) {
     ];
 
     return (
-        <div style={{ padding: '20px' }}>
+        <div style={{ padding: '20px' }} ref={printRef}>
             <Title level={4}>تقرير الجرد الدفتري</Title>
             <p>عرض نتيجة مطابقة صافي المبيعات مع صافي المشتريات حسب المفاتيح الأربعة المحددة.</p>
+
+            <Space style={{ marginBottom: 16 }}>
+                <Button type="primary" onClick={handlePrint}>طباعة التقرير</Button>
+                <Button onClick={handleExportCSV}>تصدير إلى CSV</Button>
+            </Space>
 
             <Table
                 title={() => <strong>الجرد الدفتري ({data.length} سجل)</strong>}

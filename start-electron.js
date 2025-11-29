@@ -1,4 +1,4 @@
-﻿const { spawn } = require('child_process');
+﻿﻿﻿﻿const { spawn } = require('child_process');
 const waitOn = require('wait-on');
 
 async function startApp() {
@@ -21,6 +21,7 @@ async function startApp() {
         
     } catch (err) {
         console.error('فشل في بدء التطبيق:', err);
+        console.error('Error details:', err.message, err.stack);
         process.exit(1);
     }
 }
