@@ -63,21 +63,25 @@ ipcMain.handle('readExcelFile', async (event, filePath) => {
     if (workbook.Sheets['مشتريات']) {
       let rawPurchases = XLSX.utils.sheet_to_json(workbook.Sheets['مشتريات'], { header: 1 });
       data.purchases = convertExcelDates(rawPurchases);
+      console.log('Purchases sheet loaded:', data.purchases.length, 'rows');
     }
 
     if (workbook.Sheets['مبيعات']) {
       let rawSales = XLSX.utils.sheet_to_json(workbook.Sheets['مبيعات'], { header: 1 });
       data.sales = convertExcelDates(rawSales);
+      console.log('Sales sheet loaded:', data.sales.length, 'rows');
     }
 
     if (workbook.Sheets['المخزون']) {
       let rawInventory = XLSX.utils.sheet_to_json(workbook.Sheets['المخزون'], { header: 1 });
-      data.inventory = convertExcelDates(rawInventory);
+      data.physicalInventory = convertExcelDates(rawInventory);
+      console.log('Inventory sheet loaded:', data.physicalInventory.length, 'rows');
     }
 
     if (workbook.Sheets['الارصدة']) {
       let rawBalances = XLSX.utils.sheet_to_json(workbook.Sheets['الارصدة'], { header: 1 });
-      data.balances = rawBalances;
+      data.supplierbalances = rawBalances;
+      console.log('Balances sheet loaded:', data.supplierbalances.length, 'rows');
     }
 
     return { success: true, data };
@@ -97,24 +101,9 @@ function createWindow() {
     height: 800,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
-      // Add Content Security Policy to address security warnings
-      sandbox: false, // Required for IPC communication
     },
   });
-  
-  // Set Content Security Policy
-  mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
-    callback({
-      responseHeaders: {
-        ...details.responseHeaders,
-        'Content-Security-Policy': [
-          "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self'; media-src 'self'; object-src 'none'; child-src 'self'; frame-src 'self';"
-        ]
-      }
-    });
-  });
-  
-  mainWindow.loadFile('dist/index.html');
+  mainWindow.loadURL('http://localhost:3001');
   mainWindow.webContents.openDevTools();
 }
 
@@ -125,9 +114,6 @@ app.whenReady().then(() => {
       createWindow();
     }
   });
-}).catch(err => {
-  console.error('Failed to create window:', err);
-  console.error('Error details:', err.message, err.stack);
 });
 
 app.on('window-all-closed', () => {

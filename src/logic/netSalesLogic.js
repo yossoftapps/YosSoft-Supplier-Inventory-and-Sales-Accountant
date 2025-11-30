@@ -16,6 +16,9 @@ const sortByDateDesc = (data, dateKey) => {
     return data.sort((a, b) => new Date(b[dateKey]) - new Date(a[dateKey]));
 };
 
+// استيراد أداة تتبع المطابقات
+import matchingAudit from '../audit/matchingAudit';
+
 /**
  * حساب صافي المبيعات بتطبيق 10 مفاتيح مطابقة حسب الأولوية كما ورد في المواصفات
  * @param {Array} allSalesRaw - بيانات المبيعات الخام (مع العناوين)
@@ -154,6 +157,18 @@ export const calculateNetSales = (allSalesRaw, salesReturnsRaw) => {
                     // التطابق كامل: خصم كمية المرتجع بالكامل
                     netSalesList[saleIndex]['الكمية'] -= remainingReturnQty;
                     netSalesList[saleIndex]['ملاحظات'] = `مطابق (مفتاح ${keyIndex + 1})`;
+                    
+                    // تسجيل عملية المطابقة في سجل التدقيق
+                    matchingAudit.recordMatch(
+                        'NetSales',
+                        keyIndex + 1,
+                        returnRecord['م'],
+                        saleRecord['م'],
+                        remainingReturnQty,
+                        returnRecord,
+                        saleRecord
+                    );
+                    
                     remainingReturnQty = 0;
                     matched = true;
                     usedKeyNumber = keyIndex + 1;
@@ -162,6 +177,18 @@ export const calculateNetSales = (allSalesRaw, salesReturnsRaw) => {
                     // تطابق جزئي: خصم كمية المبيعات بالكامل واستمر
                     netSalesList[saleIndex]['الكمية'] = 0;
                     netSalesList[saleIndex]['ملاحظات'] = `مطابق جزئي (مفتاح ${keyIndex + 1})`;
+                    
+                    // تسجيل عملية المطابقة في سجل التدقيق
+                    matchingAudit.recordMatch(
+                        'NetSales',
+                        keyIndex + 1,
+                        returnRecord['م'],
+                        saleRecord['م'],
+                        saleQty,
+                        returnRecord,
+                        saleRecord
+                    );
+                    
                     remainingReturnQty -= saleQty;
                     matched = true;
                     usedKeyNumber = keyIndex + 1;

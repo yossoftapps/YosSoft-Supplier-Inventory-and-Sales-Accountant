@@ -16,6 +16,9 @@ const sortByDateDesc = (data, dateKey) => {
     return data.sort((a, b) => new Date(b[dateKey]) - new Date(a[dateKey]));
 };
 
+// استيراد أداة تتبع المطابقات
+import matchingAudit from '../audit/matchingAudit';
+
 /**
  * حساب صافي المشتريات بتطبيق 8 مفاتيح مطابقة حسب الأولوية كما ورد في المواصفات
  * @param {Array} allPurchasesRaw - بيانات المشتريات الخام (مع العناوين)
@@ -24,10 +27,14 @@ const sortByDateDesc = (data, dateKey) => {
  */
 export const calculateNetPurchases = (allPurchasesRaw, purchaseReturnsRaw) => {
     console.log('--- بدء معالجة صافي المشتريات ---');
+    console.log('Input purchases raw:', allPurchasesRaw);
+    console.log('Input returns raw:', purchaseReturnsRaw);
 
     // 1. تحويل البيانات إلى كائنات
     const allPurchases = convertToObjects(allPurchasesRaw);
     const purchaseReturns = convertToObjects(purchaseReturnsRaw);
+    console.log('Converted purchases:', allPurchases);
+    console.log('Converted returns:', purchaseReturns);
 
     // 2. فرز المشتريات من الأحدث إلى الأقدم
     const sortedPurchases = sortByDateDesc([...allPurchases], 'تاريخ العملية');
@@ -144,6 +151,18 @@ export const calculateNetPurchases = (allPurchasesRaw, purchaseReturnsRaw) => {
                     // التطابق كامل: خصم كمية المرتجع بالكامل
                     netPurchasesList[purchaseIndex]['الكمية'] -= remainingReturnQty;
                     netPurchasesList[purchaseIndex]['ملاحظات'] = `مطابق (مفتاح ${keyIndex + 1})`;
+                    
+                    // تسجيل عملية المطابقة في سجل التدقيق
+                    matchingAudit.recordMatch(
+                        'NetPurchases',
+                        keyIndex + 1,
+                        returnRecord['م'],
+                        purchaseRecord['م'],
+                        remainingReturnQty,
+                        returnRecord,
+                        purchaseRecord
+                    );
+                    
                     remainingReturnQty = 0;
                     matched = true;
                     usedKeyNumber = keyIndex + 1;
@@ -152,6 +171,18 @@ export const calculateNetPurchases = (allPurchasesRaw, purchaseReturnsRaw) => {
                     // تطابق جزئي: خصم كمية المشتريات بالكامل واستمر
                     netPurchasesList[purchaseIndex]['الكمية'] = 0;
                     netPurchasesList[purchaseIndex]['ملاحظات'] = `مطابق جزئي (مفتاح ${keyIndex + 1})`;
+                    
+                    // تسجيل عملية المطابقة في سجل التدقيق
+                    matchingAudit.recordMatch(
+                        'NetPurchases',
+                        keyIndex + 1,
+                        returnRecord['م'],
+                        purchaseRecord['م'],
+                        purchaseQty,
+                        returnRecord,
+                        purchaseRecord
+                    );
+                    
                     remainingReturnQty -= purchaseQty;
                     matched = true;
                     usedKeyNumber = keyIndex + 1;

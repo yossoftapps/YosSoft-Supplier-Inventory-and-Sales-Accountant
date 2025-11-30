@@ -1,61 +1,10 @@
-import React, { useState, useRef } from 'react';
-import { Typography, Table, Alert, Radio, Button, Space, message } from 'antd';
+import React, { useState } from 'react';
+import { Typography, Table, Alert, Radio } from 'antd';
 
 const { Title } = Typography;
 
 function PhysicalInventoryPage({ data }) {
     const [selectedTab, setSelectedTab] = useState('listE');
-    const printRef = useRef();
-
-    const handlePrint = () => {
-        const printContent = printRef.current;
-        const originalContents = document.body.innerHTML;
-        
-        document.body.innerHTML = printContent.innerHTML;
-        window.print();
-        document.body.innerHTML = originalContents;
-        window.location.reload();
-    };
-
-    const handleExportCSV = () => {
-        try {
-            // تحديد البيانات المراد تصديرها حسب التبويب المحدد
-            const exportData = selectedTab === 'listE' ? data.listE : data.listF;
-            
-            if (!exportData || exportData.length === 0) {
-                message.warning('لا توجد بيانات للتصدير');
-                return;
-            }
-
-            // إنشاء محتوى CSV
-            const headers = Object.keys(exportData[0]).join(',');
-            const rows = exportData.map(row => 
-                Object.values(row).map(value => {
-                    // التعامل مع القيم التي تحتوي على فواصل
-                    const stringValue = String(value || '');
-                    return stringValue.includes(',') ? `"${stringValue}"` : stringValue;
-                }).join(',')
-            );
-            
-            const csvContent = [headers, ...rows].join('\n');
-            
-            // إنشاء ملف CSV وتنزيله
-            const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.setAttribute('href', url);
-            link.setAttribute('download', `تقرير_الجرد_الفعلي_${selectedTab}_${new Date().toISOString().slice(0, 10)}.csv`);
-            link.style.visibility = 'hidden';
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            
-            message.success('تم تصدير البيانات بنجاح');
-        } catch (error) {
-            console.error('خطأ في تصدير CSV:', error);
-            message.error('حدث خطأ أثناء تصدير البيانات');
-        }
-    };
 
     if (!data) {
         return (
@@ -82,14 +31,9 @@ function PhysicalInventoryPage({ data }) {
     ];
 
     return (
-        <div style={{ padding: '20px' }} ref={printRef}>
+        <div style={{ padding: '20px' }}>
             <Title level={4}>تقرير الجرد الفعلي (المخزون الفعلي)</Title>
             <p>عرض الكميات الموجبة بعد التصفية، والكميات السالبة والمنتهية الصلاحية.</p>
-
-            <Space style={{ marginBottom: 16 }}>
-                <Button type="primary" onClick={handlePrint}>طباعة التقرير</Button>
-                <Button onClick={handleExportCSV}>تصدير إلى CSV</Button>
-            </Space>
 
             <Radio.Group value={selectedTab} onChange={(e) => setSelectedTab(e.target.value)} style={{ marginBottom: 16 }}>
                 <Radio.Button value="listE">قائمة ه: الكميات الموجبة ({data.listE.length})</Radio.Button>
