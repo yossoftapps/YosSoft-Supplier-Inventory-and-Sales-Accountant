@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { Typography, Table, Alert, Radio } from 'antd';
+import { formatQuantity, formatMoney } from '../utils/financialCalculations.js';
+import PrintExportButtons from '../components/PrintExportButtons';
 
 const { Title } = Typography;
 
@@ -9,12 +11,12 @@ function PhysicalInventoryPage({ data }) {
     if (!data) {
         return (
             <div style={{ padding: '20px' }}>
-                <Alert message="لا توجد بيانات" description="يرجى استيراد ملف Excel أولاً لمعالجة البيانات." type="info" showIcon />
+                <Alert message="لا توجد بيانات" description="يرجى استيراد ملف Excel اولاً لمعالجة البيانات." type="info" showIcon />
             </div>
         );
     }
 
-    // تم تعريف الأعمدة بناءً على المخرجات النهائية للمنطق
+    // تم تعريف الاعمدة بناءً على المخرجات النهائية للمنطق
     const columns = [
         { title: 'م', dataIndex: 'م', key: 'م', width: 60, align: 'center' },
         { title: 'رمز المادة', dataIndex: 'رمز المادة', key: 'رمز المادة', width: 120 },
@@ -22,7 +24,7 @@ function PhysicalInventoryPage({ data }) {
         { title: 'الوحدة', dataIndex: 'الوحدة', key: 'الوحدة', width: 80, align: 'center' },
         {
             title: 'الكمية', dataIndex: 'الكمية', key: 'الكمية', width: 100, align: 'left',
-            render: (text) => (parseFloat(text) || 0).toFixed(2)
+            render: (text) => formatQuantity(text)
         },
         { title: 'تاريخ الصلاحية', dataIndex: 'تاريخ الصلاحية', key: 'تاريخ الصلاحية', width: 120 },
         { title: 'ملاحظات', dataIndex: 'ملاحظات', key: 'ملاحظات', width: 100, align: 'center' },
@@ -34,6 +36,14 @@ function PhysicalInventoryPage({ data }) {
         <div style={{ padding: '20px' }}>
             <Title level={4}>تقرير الجرد الفعلي (المخزون الفعلي)</Title>
             <p>عرض الكميات الموجبة بعد التصفية، والكميات السالبة والمنتهية الصلاحية.</p>
+
+            {/* Print/Export buttons */}
+            <PrintExportButtons 
+                data={selectedTab === 'listE' ? data.listE : data.listF}
+                title={`تقرير الجرد الفعلي - ${selectedTab === 'listE' ? 'قائمة ه: الكميات الموجبة' : 'قائمة و: الكميات السالبة والمنتهية'}`}
+                columns={columns}
+                filename={selectedTab === 'listE' ? 'positive-inventory' : 'negative-expired-inventory'}
+            />
 
             <Radio.Group value={selectedTab} onChange={(e) => setSelectedTab(e.target.value)} style={{ marginBottom: 16 }}>
                 <Radio.Button value="listE">قائمة ه: الكميات الموجبة ({data.listE.length})</Radio.Button>
@@ -55,7 +65,7 @@ function PhysicalInventoryPage({ data }) {
                             </Table.Summary.Cell>
                             <Table.Summary.Cell index={4}>
                                 <strong>
-                                    {data.listE.reduce((sum, record) => sum + parseFloat(record['الكمية'] || 0), 0).toFixed(2)}
+                                    {formatQuantity(data.listE.reduce((sum, record) => sum + parseFloat(record['الكمية'] || 0), 0))}
                                 </strong>
                             </Table.Summary.Cell>
                             <Table.Summary.Cell index={5} colSpan={4}></Table.Summary.Cell>
@@ -78,7 +88,7 @@ function PhysicalInventoryPage({ data }) {
                             </Table.Summary.Cell>
                             <Table.Summary.Cell index={4}>
                                 <strong>
-                                    {data.listF.reduce((sum, record) => sum + parseFloat(record['الكمية'] || 0), 0).toFixed(2)}
+                                    {formatQuantity(data.listF.reduce((sum, record) => sum + parseFloat(record['الكمية'] || 0), 0))}
                                 </strong>
                             </Table.Summary.Cell>
                             <Table.Summary.Cell index={5} colSpan={4}></Table.Summary.Cell>

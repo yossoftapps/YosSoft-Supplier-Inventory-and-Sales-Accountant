@@ -1,20 +1,24 @@
 import React, { useState } from 'react';
 import { Typography, Table, Alert, Radio } from 'antd';
+import { formatQuantity, formatMoney } from '../utils/financialCalculations.js';
+import PrintExportButtons from '../components/PrintExportButtons';
+import { useTranslation } from 'react-i18next';
 
 const { Title } = Typography;
 
 function NetPurchasesPage({ data }) {
+    const { t } = useTranslation();
     const [selectedTab, setSelectedTab] = useState('netPurchases');
 
     if (!data) {
         return (
             <div style={{ padding: '20px' }}>
-                <Alert message="لا توجد بيانات" description="يرجى استيراد ملف Excel أولاً لمعالجة البيانات." type="info" showIcon />
+                <Alert message={t('noData')} description={t('importExcelFirst')} type="info" showIcon />
             </div>
         );
     }
 
-    // تم تعريف الأعمدة بناءً على هيئة ورقة "المشتريات" مع إضافة الأعمدة المحدثة
+    // تم تعريف الاعمدة بناءً على هيئة ورقة "المشتريات" مع إضافة الاعمدة المحدثة
     const columns = [
         { title: 'م', dataIndex: 'م', key: 'م', width: 60, align: 'center' },
         { title: 'رمز المادة', dataIndex: 'رمز المادة', key: 'رمز المادة', width: 120 },
@@ -22,15 +26,15 @@ function NetPurchasesPage({ data }) {
         { title: 'الوحدة', dataIndex: 'الوحدة', key: 'الوحدة', width: 80, align: 'center' },
         {
             title: 'الكمية', dataIndex: 'الكمية', key: 'الكمية', width: 100, align: 'left',
-            render: (text) => (parseFloat(text) || 0).toFixed(2)
+            render: (text) => formatQuantity(text)
         },
         {
             title: 'كمية الجرد', dataIndex: 'كمية الجرد', key: 'كمية الجرد', width: 100, align: 'left',
-            render: (text) => (parseFloat(text) || 0).toFixed(2)
+            render: (text) => formatQuantity(text)
         },
         {
             title: 'الافرادي', dataIndex: 'الافرادي', key: 'الافرادي', width: 80, align: 'left',
-            render: (text) => (parseInt(text, 10) || 0).toLocaleString('ar-EG')
+            render: (text) => formatMoney(text)
         },
         { title: 'تاريخ الصلاحية', dataIndex: 'تاريخ الصلاحية', key: 'تاريخ الصلاحية', width: 120 },
         { title: 'المورد', dataIndex: 'المورد', key: 'المورد' },
@@ -43,17 +47,25 @@ function NetPurchasesPage({ data }) {
 
     return (
         <div style={{ padding: '20px' }}>
-            <Title level={4}>تقرير صافي المشتريات</Title>
+            <Title level={4}>{t('netPurchases')}</Title>
             <p>عرض المشتريات بعد خصم المرتجعات المطابقة، والمرتجعات التي لم يتم مطابقتها، مع بيانات المطابقة مع الجرد الفعلي.</p>
 
+            {/* Print/Export buttons */}
+            <PrintExportButtons 
+                data={selectedTab === 'netPurchases' ? data.netPurchasesList : data.orphanReturnsList}
+                title={`${t('netPurchases')} - ${selectedTab === 'netPurchases' ? 'قائمة ا: المشتريات الفعلية' : 'قائمة ب: المرتجعات اليتيمة'}`}
+                columns={columns}
+                filename={selectedTab === 'netPurchases' ? 'net-purchases' : 'orphan-returns'}
+            />
+
             <Radio.Group value={selectedTab} onChange={(e) => setSelectedTab(e.target.value)} style={{ marginBottom: 16 }}>
-                <Radio.Button value="netPurchases">قائمة أ: المشتريات الفعلية ({data.netPurchasesList.length})</Radio.Button>
+                <Radio.Button value="netPurchases">قائمة ا: المشتريات الفعلية ({data.netPurchasesList.length})</Radio.Button>
                 <Radio.Button value="orphanReturns">قائمة ب: المرتجعات اليتيمة ({data.orphanReturnsList.length})</Radio.Button>
             </Radio.Group>
 
             {selectedTab === 'netPurchases' && (
                 <Table
-                    title={() => <strong>قائمة أ: المشتريات الفعلية ({data.netPurchasesList.length} سجل)</strong>}
+                    title={() => <strong>قائمة ا: المشتريات الفعلية ({data.netPurchasesList.length} {t('records')})</strong>}
                     dataSource={data.netPurchasesList}
                     columns={columns}
                     rowKey="م"
@@ -75,10 +87,10 @@ function NetPurchasesPage({ data }) {
                                         <strong>الإجمالي لهذه الصفحة</strong>
                                     </Table.Summary.Cell>
                                     <Table.Summary.Cell index={4}>
-                                        <strong>{totalQuantity.toFixed(2)}</strong>
+                                        <strong>{formatQuantity(totalQuantity)}</strong>
                                     </Table.Summary.Cell>
                                     <Table.Summary.Cell index={5}>
-                                        <strong>{totalInventoryQuantity.toFixed(2)}</strong>
+                                        <strong>{formatQuantity(totalInventoryQuantity)}</strong>
                                     </Table.Summary.Cell>
                                     <Table.Summary.Cell index={6} colSpan={8}></Table.Summary.Cell>
                                 </Table.Summary.Row>
@@ -88,12 +100,12 @@ function NetPurchasesPage({ data }) {
                                     </Table.Summary.Cell>
                                     <Table.Summary.Cell index={4}>
                                         <strong>
-                                            {data.netPurchasesList.reduce((sum, record) => sum + parseFloat(record['الكمية'] || 0), 0).toFixed(2)}
+                                            {formatQuantity(data.netPurchasesList.reduce((sum, record) => sum + parseFloat(record['الكمية'] || 0), 0))}
                                         </strong>
                                     </Table.Summary.Cell>
                                     <Table.Summary.Cell index={5}>
                                         <strong>
-                                            {data.netPurchasesList.reduce((sum, record) => sum + parseFloat(record['كمية الجرد'] || 0), 0).toFixed(2)}
+                                            {formatQuantity(data.netPurchasesList.reduce((sum, record) => sum + parseFloat(record['كمية الجرد'] || 0), 0))}
                                         </strong>
                                     </Table.Summary.Cell>
                                     <Table.Summary.Cell index={6} colSpan={8}></Table.Summary.Cell>
@@ -105,9 +117,9 @@ function NetPurchasesPage({ data }) {
             )}
             {selectedTab === 'orphanReturns' && (
                 <Table
-                    title={() => <strong>قائمة ب: المرتجعات اليتيمة ({data.orphanReturnsList.length} سجل)</strong>}
+                    title={() => <strong>قائمة ب: المرتجعات اليتيمة ({data.orphanReturnsList.length} {t('records')})</strong>}
                     dataSource={data.orphanReturnsList}
-                    columns={columns} // يمكن استخدام نفس الأعمدة، ستكون الحقول الإضافية فارغة
+                    columns={columns} // يمكن استخدام نفس الاعمدة، ستكون الحقول الإضافية فارغة
                     rowKey="م"
                     scroll={{ x: 1400 }}
                     pagination={{ pageSize: 25 }}
@@ -118,7 +130,7 @@ function NetPurchasesPage({ data }) {
                             </Table.Summary.Cell>
                             <Table.Summary.Cell index={4}>
                                 <strong>
-                                    {data.orphanReturnsList.reduce((sum, record) => sum + parseFloat(record['الكمية'] || 0), 0).toFixed(2)}
+                                    {formatQuantity(data.orphanReturnsList.reduce((sum, record) => sum + parseFloat(record['الكمية'] || 0), 0))}
                                 </strong>
                             </Table.Summary.Cell>
                             <Table.Summary.Cell index={5} colSpan={9}></Table.Summary.Cell>

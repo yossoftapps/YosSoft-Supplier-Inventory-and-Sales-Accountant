@@ -69,7 +69,7 @@ const TABLE_SCHEMAS = {
   },
   
   // Supplier Balances table schema (ورقة الارصدة)
-  supplierBalances: {
+  supplierbalances: {
     requiredColumns: [
       'م', 'رمز الحساب', 'المورد', 'مدين', 'دائن', 'الحساب المساعد'
     ],
@@ -95,7 +95,7 @@ const TABLE_SCHEMAS = {
 function validateColumns(data, schema, tableName) {
   const errors = [];
   if (!data || data.length < 1) {
-    errors.push(`بيانات ${tableName} فارغة أو غير موجودة`);
+    errors.push(`بيانات ${tableName} فارغة او غير موجودة`);
     return errors;
   }
   
@@ -103,7 +103,7 @@ function validateColumns(data, schema, tableName) {
   const missingColumns = schema.requiredColumns.filter(col => !headers.includes(col));
   
   if (missingColumns.length > 0) {
-    errors.push(`الأعمدة المطلوبة مفقودة في ${tableName}: ${missingColumns.join(', ')}`);
+    errors.push(`الاعمدة المطلوبة مفقودة في ${tableName}: ${missingColumns.join(', ')}`);
   }
   
   return errors;
@@ -161,7 +161,7 @@ function validateDataTypes(data, schema, tableName) {
         }
         
         if (!isValid) {
-          errors.push(`خطأ في صف ${i} لجدول ${tableName}: ${errorMessage}`);
+          errors.push(`خطا في صف ${i} لجدول ${tableName}: ${errorMessage}`);
         }
       }
     }

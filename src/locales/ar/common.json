@@ -1,0 +1,23 @@
+{
+  "appTitle": "يوسوفت محاسب الموردين والمخزون والمبيعات",
+  "importData": "استيراد البيانات",
+  "netPurchases": "صافي المشتريات",
+  "netSales": "صافي المبيعات",
+  "physicalInventory": "الجرد الفعلي",
+  "endingInventory": "المخزون النهائي",
+  "bookInventory": "الجرد الدفتري",
+  "salesCost": "تكلفة المبيعات",
+  "excessInventory": "فائض المخزون",
+  "suppliersPayables": "استحقاق الموردين",
+  "supplierMovement": "حركة مورد",
+  "noData": "لا توجد بيانات",
+  "importExcelFirst": "يرجى استيراد ملف Excel أولاً لمعالجة البيانات.",
+  "records": "سجل",
+  "print": "طباعة",
+  "exportToExcel": "تصدير إلى Excel",
+  "exportCurrentReport": "تصدير التقرير الحالي",
+  "exportAllReports": "تصدير جميع التقارير",
+  "language": "اللغة",
+  "arabic": "العربية",
+  "english": "الإنجليزية"
+}

@@ -16,8 +16,21 @@ const sortByDateAsc = (data, dateKey) => {
     return data.sort((a, b) => new Date(a[dateKey]) - new Date(b[dateKey]));
 };
 
+// استيراد ادوات الحسابات المالية الدقة
+import { 
+  roundToInteger, 
+  roundToDecimalPlaces, 
+  formatMoney, 
+  formatQuantity,
+  multiply,
+  subtract,
+  add,
+  compare,
+  Decimal
+} from '../utils/financialCalculations.js';
+
 /**
- * حساب تكلفة المبيعات بتطبيق 4 مفاتيح مطابقة حسب الأولوية كما ورد في المواصفات
+ * حساب تكلفة المبيعات بتطبيق 4 مفاتيح مطابقة حسب الاولوية كما ورد في المواصفات
  * @param {Object} netPurchasesResult - نتيجة صافي المشتريات
  * @param {Object} netSalesResult - نتيجة صافي المبيعات
  * @returns {Array} قائمة بعمليات البيع مع تكلفة الشراء المطابقة
@@ -29,29 +42,29 @@ export const calculateSalesCost = (netPurchasesResult, netSalesResult) => {
     const purchases = [...(netPurchasesResult.netPurchasesList || [])];
     const sales = [...(netSalesResult.netSalesList || [])];
     
-    // فرز المشتريات حسب التاريخ تصاعدياً (الأقدم أولاً)
+    // فرز المشتريات حسب التاريخ تصاعدياً (الاقدم اولاً)
     const sortedPurchases = sortByDateAsc(purchases, 'تاريخ العملية');
     
     // إنشاء نسخة عمل من المشتريات لتتبع الكميات المتبقية
     const purchaseStock = sortedPurchases.map(p => ({
         ...p,
-        remainingQuantity: parseFloat(p['الكمية']) || 0
+        remainingQuantity: roundToDecimalPlaces(p['الكمية'] || 0, 2)
     }));
     
     // معالجة كل عملية بيع لحساب تكلفتها
     // 3-3-04-00 حسب مفاتيح المطابقة بالترتيب التالي:-
-    // 3-3-04-01 الشرط الأساسي للمطابقة تاريخ صافي المبيعات اكبر او يساوي تاريخ صافي المشتريات
+    // 3-3-04-01 الشرط الاساسي للمطابقة تاريخ صافي المبيعات اكبر او يساوي تاريخ صافي المشتريات
     // 3-3-04-02 مفتاح مطابقة رقم 1:- (رمز المادة، تاريخ الصلاحية، الكمية) + تاريخ صافي المبيعات اكبر او يساوي تاريخ صافي المشتريات
     // 3-3-04-03 مفتاح مطابقة رقم 2:- (رمز المادة، تاريخ الصلاحية) + تاريخ صافي المبيعات اكبر او يساوي تاريخ صافي المشتريات
     // 3-3-04-04 مفتاح مطابقة رقم 3:- (رمز المادة) + تاريخ صافي المبيعات اكبر او يساوي تاريخ صافي المشتريات
-    // 3-3-04-05 مفتاح مطابقة رقم 4:- (رمز المادة) + تاريخ صافي المبيعات اصغر من تاريخ صافي المشتريات بثلاثة أيام كحد اقصى
+    // 3-3-04-05 مفتاح مطابقة رقم 4:- (رمز المادة) + تاريخ صافي المبيعات اصغر من تاريخ صافي المشتريات بثلاثة ايام كحد اقصى
     
     const getMatchingKeys = (saleRecord) => [
         // المفتاح 1:- (رمز المادة، تاريخ الصلاحية، الكمية) + تاريخ صافي المبيعات اكبر او يساوي تاريخ صافي المشتريات
         (p) => new Date(saleRecord['تاريخ العملية']) >= new Date(p['تاريخ العملية']) &&
             p['رمز المادة'] === saleRecord['رمز المادة'] &&
             p['تاريخ الصلاحية'] === saleRecord['تاريخ الصلاحية'] &&
-            parseFloat(p['الكمية']) === parseFloat(saleRecord['الكمية']),
+            compare(p['الكمية'], saleRecord['الكمية']) === 0,
 
         // المفتاح 2:- (رمز المادة، تاريخ الصلاحية) + تاريخ صافي المبيعات اكبر او يساوي تاريخ صافي المشتريات
         (p) => new Date(saleRecord['تاريخ العملية']) >= new Date(p['تاريخ العملية']) &&
@@ -62,16 +75,17 @@ export const calculateSalesCost = (netPurchasesResult, netSalesResult) => {
         (p) => new Date(saleRecord['تاريخ العملية']) >= new Date(p['تاريخ العملية']) &&
             p['رمز المادة'] === saleRecord['رمز المادة'],
 
-        // المفتاح 4:- (رمز المادة) + تاريخ صافي المبيعات اصغر من تاريخ صافي المشتريات بثلاثة أيام كحد اقصى
+        // المفتاح 4:- (رمز المادة) + تاريخ صافي المبيعات اصغر من تاريخ صافي المشتريات بثلاثة ايام كحد اقصى
         (p) => new Date(p['تاريخ العملية']) - new Date(saleRecord['تاريخ العملية']) <= 3 * 24 * 60 * 60 * 1000 &&
             new Date(saleRecord['تاريخ العملية']) < new Date(p['تاريخ العملية']) &&
             p['رمز المادة'] === saleRecord['رمز المادة'],
     ];
     
     const salesWithCost = sales.map((sale, index) => {
-        const saleQuantity = parseFloat(sale['الكمية']) || 0;
+        // استخدام الحسابات المالية الدقيقة
+        const saleQuantity = roundToDecimalPlaces(sale['الكمية'] || 0, 2);
         let remainingSaleQty = saleQuantity;
-        let totalCost = 0;
+        let totalCost = new Decimal(0);
         let purchaseDetails = [];
         let matched = false;
         let notes = 'لايوجد مشتريات';
@@ -80,34 +94,36 @@ export const calculateSalesCost = (netPurchasesResult, netSalesResult) => {
         
         // جرب كل مفتاح بالترتيب
         for (let keyIndex = 0; keyIndex < matchingKeys.length; keyIndex++) {
-            if (remainingSaleQty <= 0) break;
+            if (compare(remainingSaleQty, 0) <= 0) break;
             
             const keyFunction = matchingKeys[keyIndex];
             
             // البحث عن جميع السجلات المطابقة مع هذا المفتاح
             let matchingPurchases = purchaseStock.filter(
-                p => p.remainingQuantity > 0 && keyFunction(p)
+                p => compare(p.remainingQuantity, 0) > 0 && keyFunction(p)
             );
             
-            // ترتيب السجلات المطابقة: الأقدم أولاً
+            // ترتيب السجلات المطابقة: الاقدم اولاً
             matchingPurchases.sort((a, b) => new Date(a['تاريخ العملية']) - new Date(b['تاريخ العملية']));
             
             // ⭐ الحلقة الداخلية: استنزال من كل السجلات المطابقة بنفس المفتاح وفقاً للترتيب
             for (const purchase of matchingPurchases) {
-                if (remainingSaleQty <= 0) break;
+                if (compare(remainingSaleQty, 0) <= 0) break;
                 
                 // حساب الكمية التي يمكن خصمها من هذا السجل
-                const quantityToTake = Math.min(purchase.remainingQuantity, remainingSaleQty);
+                const quantityToTake = compare(purchase.remainingQuantity, remainingSaleQty) < 0 
+                    ? purchase.remainingQuantity 
+                    : remainingSaleQty;
                 
-                // حساب تكلفة هذه الكمية
-                const unitPrice = parseFloat(purchase['الافرادي']) || 0;
-                const costOfTaken = quantityToTake * unitPrice;
+                // حساب تكلفة هذه الكمية باستخدام الحسابات المالية الدقيقة
+                const unitPrice = roundToInteger(purchase['الافرادي'] || 0);
+                const costOfTaken = multiply(quantityToTake, unitPrice);
                 
                 // تحديث الكمية المتبقية في سجل الشراء
-                purchase.remainingQuantity -= quantityToTake;
+                purchase.remainingQuantity = subtract(purchase.remainingQuantity, quantityToTake);
                 
                 // إضافة التكلفة إلى إجمالي تكلفة البيع
-                totalCost += costOfTaken;
+                totalCost = add(totalCost, costOfTaken);
                 
                 // تخزين تفاصيل الشراء المطابق
                 purchaseDetails.push({
@@ -118,37 +134,39 @@ export const calculateSalesCost = (netPurchasesResult, netSalesResult) => {
                 });
                 
                 // تحديث الكمية المتبقية من البيع
-                remainingSaleQty -= quantityToTake;
+                remainingSaleQty = subtract(remainingSaleQty, quantityToTake);
                 matched = true;
                 notes = 'مطابق';
                 
                 // إذا تم تغطية كامل كمية البيع، نتوقف
-                if (remainingSaleQty <= 0) break;
+                if (compare(remainingSaleQty, 0) <= 0) break;
             }
             
-            // إذا تم العثور على مطابقة، نتوقف عن تجربة المفاتيح الأخرى
+            // إذا تم العثور على مطابقة، نتوقف عن تجربة المفاتيح الاخرى
             if (matched) break;
         }
         
-        // حساب القيم المطلوبة
-        const saleUnitPrice = parseFloat(sale['الافرادي']) || 0;
-        const totalSaleValue = saleQuantity * saleUnitPrice;
-        const totalProfit = totalSaleValue - totalCost;
-        const profitMargin = totalCost > 0 ? (totalProfit / totalCost) * 100 : 0;
+        // حساب القيم المطلوبة باستخدام الحسابات المالية الدقيقة
+        const saleUnitPrice = roundToInteger(sale['الافرادي'] || 0);
+        const totalSaleValue = multiply(saleQuantity, saleUnitPrice);
+        const totalProfit = subtract(totalSaleValue, totalCost);
+        const profitMargin = compare(totalCost, 0) > 0 
+            ? multiply(divide(totalProfit, totalCost), 100) 
+            : new Decimal(0);
         const saleDate = new Date(sale['تاريخ العملية']);
         const purchaseDate = purchaseDetails.length > 0 ? new Date(purchaseDetails[0].purchaseDate) : null;
         const inventoryAge = purchaseDate ? Math.floor((saleDate - purchaseDate) / (1000 * 60 * 60 * 24)) : 0;
         
         // تحديد حالة الربحية
         let profitabilityStatus = 'مطابق';
-        if (totalProfit > 0) {
+        if (compare(totalProfit, 0) > 0) {
             profitabilityStatus = 'ربح';
-        } else if (totalProfit < 0) {
+        } else if (compare(totalProfit, 0) < 0) {
             profitabilityStatus = 'خسارة';
         }
         
         // تحديد الملاحظات
-        if (remainingSaleQty > 0 && matched) {
+        if (compare(remainingSaleQty, 0) > 0 && matched) {
             notes = 'لا يوجد مشتريات كافية';
         } else if (!matched) {
             notes = 'لايوجد مشتريات';
@@ -159,17 +177,17 @@ export const calculateSalesCost = (netPurchasesResult, netSalesResult) => {
             'رمز المادة': sale['رمز المادة'],
             'اسم المادة': sale['اسم المادة'],
             'الوحدة': sale['الوحدة'],
-            'الكمية': saleQuantity.toFixed(2),
+            'الكمية': formatQuantity(saleQuantity), // استخدام التنسيق المحدد للمبالغ
             'تاريخ الصلاحية': sale['تاريخ الصلاحية'],
             'تاريخ العملية': sale['تاريخ العملية'],
-            'افرادي': saleUnitPrice.toFixed(0),
-            'افرادي الشراء': totalCost > 0 ? (totalCost / saleQuantity).toFixed(0) : '0',
+            'الافرادي': formatMoney(saleUnitPrice), // استخدام التنسيق المحدد للمبالغ
+            'افرادي الشراء': compare(totalCost, 0) > 0 ? formatMoney(divide(totalCost, saleQuantity)) : '0',
             'تاريخ الشراء': purchaseDetails.length > 0 ? purchaseDetails[0].purchaseDate : '',
             'المورد': purchaseDetails.length > 0 ? purchaseDetails[0].purchaseBatch : '',
             'رقم السجل': sale['رقم السجل'],
-            'افرادي الربح': (saleUnitPrice - (totalCost / saleQuantity || 0)).toFixed(0),
-            'نسبة الربح': profitMargin.toFixed(2),
-            'اجمالي الربح': totalProfit.toFixed(0),
+            'افرادي الربح': formatMoney(subtract(saleUnitPrice, divide(totalCost, saleQuantity) || 0)),
+            'نسبة الربح': roundToInteger(profitMargin).toString() + '%',
+            'اجمالي الربح': formatMoney(totalProfit),
             'عمر العملية': inventoryAge.toString(),
             'بيان الربحية': profitabilityStatus,
             'ملاحظات': notes

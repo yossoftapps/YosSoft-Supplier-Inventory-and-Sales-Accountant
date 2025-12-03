@@ -1,0 +1,23 @@
+{
+  "appTitle": "YosSoft Supplier, Inventory and Sales Accountant",
+  "importData": "Import Data",
+  "netPurchases": "Net Purchases",
+  "netSales": "Net Sales",
+  "physicalInventory": "Physical Inventory",
+  "endingInventory": "Ending Inventory",
+  "bookInventory": "Book Inventory",
+  "salesCost": "Sales Cost",
+  "excessInventory": "Excess Inventory",
+  "suppliersPayables": "Suppliers Payables",
+  "supplierMovement": "Supplier Movement",
+  "noData": "No data available",
+  "importExcelFirst": "Please import an Excel file first to process the data.",
+  "records": "records",
+  "print": "Print",
+  "exportToExcel": "Export to Excel",
+  "exportCurrentReport": "Export Current Report",
+  "exportAllReports": "Export All Reports",
+  "language": "Language",
+  "arabic": "Arabic",
+  "english": "English"
+}

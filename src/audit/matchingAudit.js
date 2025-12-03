@@ -199,7 +199,7 @@ class MatchingAudit {
       return '';
     }
     
-    // رؤوس الأعمدة
+    // رؤوس الاعمدة
     const headers = [
       'Timestamp',
       'Operation Type',

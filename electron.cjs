@@ -3,7 +3,7 @@ const path = require('path');
 const XLSX = require('xlsx');
 
 // =================================================================
-// دالة مساعدة لتحويل تواريخ Excel (رقمية أو نصية) إلى نص بصيغة yyyy-mm-dd
+// دالة مساعدة لتحويل تواريخ Excel (رقمية او نصية) إلى نص بصيغة yyyy-mm-dd
 // =================================================================
 const convertExcelDates = (data) => {
   return data.map(row => {
@@ -39,7 +39,7 @@ const convertExcelDates = (data) => {
 };
 
 // =================================================================
-// معالجات الأوامر (IPC Handlers)
+// معالجات الاوامر (IPC Handlers)
 // =================================================================
 
 ipcMain.handle('dialog:openFile', async () => {
@@ -54,12 +54,16 @@ ipcMain.handle('dialog:openFile', async () => {
   }
 });
 
+// Import chunked processing utilities
+// Note: Electron main process uses CommonJS, so we need to handle ES modules differently
+// For now, we'll keep the existing implementation and plan to refactor later
+
 ipcMain.handle('readExcelFile', async (event, filePath) => {
   try {
     const workbook = XLSX.readFile(filePath);
     const data = {};
 
-    // قراءة البيانات مع العناوين (بدون range لتضمين السطر الأول)
+    // قراءة البيانات مع العناوين (بدون range لتضمين السطر الاول)
     if (workbook.Sheets['مشتريات']) {
       let rawPurchases = XLSX.utils.sheet_to_json(workbook.Sheets['مشتريات'], { header: 1 });
       data.purchases = convertExcelDates(rawPurchases);
@@ -92,7 +96,7 @@ ipcMain.handle('readExcelFile', async (event, filePath) => {
 });
 
 // =================================================================
-// دوال إدارة النوافذ وأحداث التطبيق
+// دوال إدارة النوافذ واحداث التطبيق
 // =================================================================
 
 function createWindow() {
@@ -103,7 +107,7 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
     },
   });
-  mainWindow.loadURL('http://localhost:3001');
+  mainWindow.loadURL('http://localhost:3003');
   mainWindow.webContents.openDevTools();
 }
 

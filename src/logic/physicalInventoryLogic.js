@@ -1,3 +1,16 @@
+// استيراد ادوات الحسابات المالية الدقة
+import { 
+  roundToInteger, 
+  roundToDecimalPlaces, 
+  formatMoney, 
+  formatQuantity,
+  multiply,
+  subtract,
+  add,
+  compare,
+  Decimal
+} from '../utils/financialCalculations.js';
+
 // دالة مساعدة لتحويل مصفوفة المصفوفات إلى مصفوفة كائنات
 const convertToObjects = (data) => {
     if (!data || data.length < 2) return [];
@@ -23,19 +36,19 @@ const sortByDate = (data, dateKey, direction = 'asc') => {
 export const processPhysicalInventory = (physicalInventoryRaw) => {
     console.log('--- بدء معالجة الجرد الفعلي ---');
 
-    // 1. التحويل والإعداد الأولي
+    // 1. التحويل والإعداد الاولي
     let inventory = convertToObjects(physicalInventoryRaw);
     const today = new Date();
     today.setHours(0, 0, 0, 0); // تجاهل الوقت في المقارنة
 
-    // 2. المرحلة الأولى: إضافة الأعمدة المؤقتة (م، ملاحظات)
+    // 2. المرحلة الاولى: إضافة الاعمدة المؤقتة (م، ملاحظات)
     inventory = inventory.map((item, index) => {
-        const quantity = parseFloat(item['الكمية']);
+        const quantity = roundToDecimalPlaces(item['الكمية'] || 0, 2);
         const expiryDate = new Date(item['تاريخ الصلاحية']);
         expiryDate.setHours(0, 0, 0, 0);
 
         let notes = '';
-        if (quantity < 0) {
+        if (compare(quantity, 0) < 0) {
             notes = 'سالب';
         } else if (expiryDate <= today) {
             notes = 'منتهي';
@@ -97,7 +110,7 @@ export const processPhysicalInventory = (physicalInventoryRaw) => {
     for (const [code, items] of itemMap.entries()) {
         const negativeItems = items.filter(i => i['ملاحظات'] === 'سالب');
         const expiredItems = items.filter(i => i['ملاحظات'] === 'منتهي');
-        // ترتيب السجلات الموجبة حسب تاريخ الصلاحية من الأقرب إلى الأبعد
+        // ترتيب السجلات الموجبة حسب تاريخ الصلاحية من الاقرب إلى الابعد
         const positiveItems = items.filter(i => i['ملاحظات'] === 'موجب' || i['ملاحظات'] === 'معالجة').sort((a, b) => new Date(a['تاريخ الصلاحية']) - new Date(b['تاريخ الصلاحية']));
 
         // اذا كان ملاحظات (سالب) ورمز المادة فريد غير مكرر يتم الانتقال للسجل التالي
@@ -109,40 +122,40 @@ export const processPhysicalInventory = (physicalInventoryRaw) => {
         // اذا كان ملاحظات (سالب) ورمز المادة مكرر:
         if (negativeItems.length > 0) {
             for (const negItem of negativeItems) {
-                let remainingNegQty = Math.abs(negItem['الكمية']);
+                let remainingNegQty = subtract(new Decimal(0), negItem['الكمية']); // القيمة المطلقة
                 let fullyMatched = false;
                 
                 // البحث عن سجلات موجبة مطابقة تمامًا
                 for (const posItem of positiveItems) {
-                    if (posItem['الكمية'] === remainingNegQty) {
+                    if (compare(posItem['الكمية'], remainingNegQty) === 0) {
                         // كميات مطابقة تمامًا - حذف السجلات
-                        posItem['الكمية'] = 0;
-                        remainingNegQty = 0;
+                        posItem['الكمية'] = new Decimal(0);
+                        remainingNegQty = new Decimal(0);
                         fullyMatched = true;
                         break;
                     }
                 }
                 
-                // إذا لم تطابق تمامًا، استنزال من السجل ذو الصلاحية الأبعد
-                if (!fullyMatched && remainingNegQty > 0) {
-                    // ترتيب السجلات الموجبة من الأبعد صلاحية إلى الأقرب
+                // إذا لم تطابق تمامًا، استنزال من السجل ذو الصلاحية الابعد
+                if (!fullyMatched && compare(remainingNegQty, 0) > 0) {
+                    // ترتيب السجلات الموجبة من الابعد صلاحية إلى الاقرب
                     const sortedPositiveItems = [...positiveItems].sort((a, b) => new Date(b['تاريخ الصلاحية']) - new Date(a['تاريخ الصلاحية']));
                     
                     for (const posItem of sortedPositiveItems) {
-                        if (remainingNegQty <= 0) break;
-                        if (posItem['الكمية'] >= remainingNegQty) {
-                            posItem['الكمية'] -= remainingNegQty;
-                            remainingNegQty = 0;
+                        if (compare(remainingNegQty, 0) <= 0) break;
+                        if (compare(posItem['الكمية'], remainingNegQty) >= 0) {
+                            posItem['الكمية'] = subtract(posItem['الكمية'], remainingNegQty);
+                            remainingNegQty = new Decimal(0);
                         } else {
-                            remainingNegQty -= posItem['الكمية'];
-                            posItem['الكمية'] = 0;
+                            remainingNegQty = subtract(remainingNegQty, posItem['الكمية']);
+                            posItem['الكمية'] = new Decimal(0);
                         }
                     }
                 }
                 
-                // إذا بقيت كمية سالبة، أضف السجل السالب للقائمة النهائية
-                if (remainingNegQty > 0) {
-                    negItem['الكمية'] = -remainingNegQty;
+                // إذا بقيت كمية سالبة، اضف السجل السالب للقائمة النهائية
+                if (compare(remainingNegQty, 0) > 0) {
+                    negItem['الكمية'] = subtract(new Decimal(0), remainingNegQty);
                     processedInventory.push(negItem);
                 }
             }
@@ -157,10 +170,10 @@ export const processPhysicalInventory = (physicalInventoryRaw) => {
         // اذا كان ملاحظات (منتهي) ورمز المادة مكرر:
         if (expiredItems.length > 0) {
             for (const expItem of expiredItems) {
-                // البحث عن سجل معالجة أو موجب بأقرب صلاحية
-                const targetPosItem = positiveItems.find(p => p['الكمية'] > 0);
+                // البحث عن سجل معالجة او موجب باقرب صلاحية
+                const targetPosItem = positiveItems.find(p => compare(p['الكمية'], 0) > 0);
                 if (targetPosItem) {
-                    targetPosItem['الكمية'] += Math.abs(expItem['الكمية']); // إضافة الكمية المنتهية
+                    targetPosItem['الكمية'] = add(targetPosItem['الكمية'], roundToDecimalPlaces(Math.abs(expItem['الكمية']), 2)); // إضافة الكمية المنتهية
                     // تعديل ملاحظات للاصناف = معالجة الى موجب
                     targetPosItem['ملاحظات'] = 'موجب';
                     // لا نضيف المنتهي للقائمة النهائية
@@ -173,7 +186,7 @@ export const processPhysicalInventory = (physicalInventoryRaw) => {
 
         // إضافة السجلات الموجبة المتبقية
         positiveItems.forEach(p => {
-            if (p['الكمية'] > 0) {
+            if (compare(p['الكمية'], 0) > 0) {
                 p['ملاحظات'] = 'موجب'; // إعادة تعيين الحالة
                 processedInventory.push(p);
             }
@@ -200,11 +213,11 @@ export const processPhysicalInventory = (physicalInventoryRaw) => {
     // 2-3-05-02 تاريخ الصلاحية (تاريخ بتنسيق yyyy-mm-01) بدون توقيت او وقت
     // 2-3-05-03 من الاقدم الى الاحدث
     const sortedFinalInventory = finalInventory.sort((a, b) => {
-        // الفرز حسب رمز المادة أولاً
+        // الفرز حسب رمز المادة اولاً
         if (a['رمز المادة'] !== b['رمز المادة']) {
             return a['رمز المادة'].localeCompare(b['رمز المادة']);
         }
-        // ثم حسب تاريخ الصلاحية من الأقدم إلى الأحدث
+        // ثم حسب تاريخ الصلاحية من الاقدم إلى الاحدث
         return new Date(a['تاريخ الصلاحية']) - new Date(b['تاريخ الصلاحية']);
     });
 

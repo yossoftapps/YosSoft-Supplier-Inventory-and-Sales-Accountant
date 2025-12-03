@@ -1,10 +1,12 @@
-﻿const { spawn } = require('child_process');
+﻿﻿const { spawn } = require('child_process');
 const waitOn = require('wait-on');
 
 async function startApp() {
     console.log('في انتظار السيرفر...');
     try {
-        await waitOn({ resources: ['http://localhost:3001'], timeout: 10000 });
+        const ports = [3001, 3002, 3003, 3004];
+                const resources = ports.map(port => `http://localhost:${port}`);
+                await waitOn({ resources, timeout: 10000 });
         console.log('السيرفر جاهز! جاري تشغيل التطبيق...');
         
         const electronPath = require('electron');

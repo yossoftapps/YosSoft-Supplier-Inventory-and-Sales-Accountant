@@ -1,5 +1,7 @@
 import React from 'react';
 import { Typography, Table, Alert } from 'antd';
+import { formatQuantity, formatMoney } from '../utils/financialCalculations.js';
+import PrintExportButtons from '../components/PrintExportButtons';
 
 const { Title } = Typography;
 
@@ -7,12 +9,12 @@ function BookInventoryPage({ data }) {
     if (!data) {
         return (
             <div style={{ padding: '20px' }}>
-                <Alert message="لا توجد بيانات" description="يرجى استيراد ملف Excel أولاً لمعالجة البيانات." type="info" showIcon />
+                <Alert message="لا توجد بيانات" description="يرجى استيراد ملف Excel اولاً لمعالجة البيانات." type="info" showIcon />
             </div>
         );
     }
 
-    // تم تعريف الأعمدة بناءً على المخرجات النهائية للمنطق المحدث
+    // تم تعريف الاعمدة بناءً على المخرجات النهائية للمنطق المحدث
     const columns = [
         { title: 'م', dataIndex: 'م', key: 'م', width: 60, align: 'center' },
         { title: 'رمز المادة', dataIndex: 'رمز المادة', key: 'رمز المادة', width: 120 },
@@ -20,12 +22,12 @@ function BookInventoryPage({ data }) {
         { title: 'الوحدة', dataIndex: 'الوحدة', key: 'الوحدة', width: 80, align: 'center' },
         {
             title: 'الكمية', dataIndex: 'الكمية', key: 'الكمية', width: 100, align: 'left',
-            render: (text) => (parseFloat(text) || 0).toFixed(2)
+            render: (text) => formatQuantity(text)
         },
         { title: 'تاريخ الصلاحية', dataIndex: 'تاريخ الصلاحية', key: 'تاريخ الصلاحية', width: 120 },
         {
             title: 'الافرادي', dataIndex: 'الافرادي', key: 'الافرادي', width: 80, align: 'left',
-            render: (text) => (parseInt(text, 10) || 0).toLocaleString('ar-EG')
+            render: (text) => formatMoney(text)
         },
         { title: 'تاريخ الشراء', dataIndex: 'تاريخ الشراء', key: 'تاريخ الشراء', width: 120 },
         { title: 'المورد', dataIndex: 'المورد', key: 'المورد' },
@@ -33,14 +35,22 @@ function BookInventoryPage({ data }) {
         { title: 'ملاحظات', dataIndex: 'ملاحظات', key: 'ملاحظات', width: 120, align: 'center' },
         {
             title: 'كمية المبيعات', dataIndex: 'كمية المبيعات', key: 'كمية المبيعات', width: 120, align: 'left',
-            render: (text) => (parseFloat(text) || 0).toFixed(2)
+            render: (text) => formatQuantity(text)
         },
     ];
 
     return (
         <div style={{ padding: '20px' }}>
             <Title level={4}>تقرير الجرد الدفتري</Title>
-            <p>عرض نتيجة مطابقة صافي المبيعات مع صافي المشتريات حسب المفاتيح الأربعة المحددة.</p>
+            <p>عرض نتيجة مطابقة صافي المبيعات مع صافي المشتريات حسب المفاتيح الاربعة المحددة.</p>
+
+            {/* Print/Export buttons */}
+            <PrintExportButtons 
+                data={data}
+                title="تقرير الجرد الدفتري"
+                columns={columns}
+                filename="book-inventory"
+            />
 
             <Table
                 title={() => <strong>الجرد الدفتري ({data.length} سجل)</strong>}
@@ -56,7 +66,7 @@ function BookInventoryPage({ data }) {
                         </Table.Summary.Cell>
                         <Table.Summary.Cell index={4}>
                             <strong>
-                                {data.reduce((sum, record) => sum + parseFloat(record['الكمية'] || 0), 0).toFixed(2)}
+                                {formatQuantity(data.reduce((sum, record) => sum + parseFloat(record['الكمية'] || 0), 0))}
                             </strong>
                         </Table.Summary.Cell>
                         <Table.Summary.Cell index={5} colSpan={7}></Table.Summary.Cell>

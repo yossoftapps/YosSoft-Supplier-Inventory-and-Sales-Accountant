@@ -16,8 +16,21 @@ const sortByDateDesc = (data, dateKey) => {
     return data.sort((a, b) => new Date(b[dateKey]) - new Date(a[dateKey]));
 };
 
+// استيراد ادوات الحسابات المالية الدقة
+import { 
+  roundToInteger, 
+  roundToDecimalPlaces, 
+  formatMoney, 
+  formatQuantity,
+  multiply,
+  subtract,
+  add,
+  compare,
+  Decimal
+} from '../utils/financialCalculations.js';
+
 /**
- * حساب الجرد الدفتري بتطبيق 4 مفاتيح مطابقة حسب الأولوية كما ورد في المواصفات
+ * حساب الجرد الدفتري بتطبيق 4 مفاتيح مطابقة حسب الاولوية كما ورد في المواصفات
  * @param {Array} netPurchasesRaw - بيانات صافي المشتريات (قائمة A + قائمة B)
  * @param {Array} netSalesRaw - بيانات صافي المبيعات (قائمة C + قائمة D)
  * @returns {Array} bookInventoryList - قائمة الجرد الدفتري
@@ -26,7 +39,7 @@ export const calculateBookInventory = (netPurchasesList, netSalesList) => {
     console.log('--- بدء معالجة الجرد الدفتري ---');
 
     // 1. تحويل البيانات إلى كائنات (إذا كانت البيانات خام)
-    // التحقق مما إذا كانت البيانات خام (مصفوفة مصفوفات) أو كائنات بالفعل
+    // التحقق مما إذا كانت البيانات خام (مصفوفة مصفوفات) او كائنات بالفعل
     const netPurchases = Array.isArray(netPurchasesList) && netPurchasesList.length > 0 && Array.isArray(netPurchasesList[0]) 
         ? convertToObjects(netPurchasesList)
         : netPurchasesList;
@@ -35,18 +48,18 @@ export const calculateBookInventory = (netPurchasesList, netSalesList) => {
         ? convertToObjects(netSalesList)
         : netSalesList;
 
-    // 2. فرز البيانات من الأحدث إلى الأقدم
+    // 2. فرز البيانات من الاحدث إلى الاقدم
     const sortedPurchases = sortByDateDesc([...netPurchases], 'تاريخ العملية');
     const sortedSales = sortByDateDesc([...netSales], 'تاريخ العملية');
 
     // 3. إنشاء نسخة عمل من المشتريات والمبيعات
     let bookInventoryList = [];
 
-    // 4. تعريف المفاتيح الأربعة حسب الأولوية للجرد الدفتري كما ورد في المواصفات
-    // الشرط الأساسي للمطابقة تاريخ صافي المبيعات اكبر او يساوي تاريخ صافي المشتريات
+    // 4. تعريف المفاتيح الاربعة حسب الاولوية للجرد الدفتري كما ورد في المواصفات
+    // الشرط الاساسي للمطابقة تاريخ صافي المبيعات اكبر او يساوي تاريخ صافي المشتريات
     // المفتاح 1:- (رمز المادة، تاريخ الصلاحية) + تاريخ صافي المبيعات اكبر او يساوي تاريخ صافي المشتريات
     // المفتاح 2:- (رمز المادة) + تاريخ صافي المبيعات اكبر او يساوي تاريخ صافي المشتريات
-    // المفتاح 3:- (رمز المادة) + تاريخ صافي المبيعات اصغر من تاريخ صافي المشتريات بثلاثة أيام كحد اقصى
+    // المفتاح 3:- (رمز المادة) + تاريخ صافي المبيعات اصغر من تاريخ صافي المشتريات بثلاثة ايام كحد اقصى
     // المفتاح 4:- (رمز المادة) بدون شرط التاريخ
 
     const getMatchingKeys = (saleRecord) => [
@@ -59,7 +72,7 @@ export const calculateBookInventory = (netPurchasesList, netSalesList) => {
         (p) => new Date(saleRecord['تاريخ العملية']) >= new Date(p['تاريخ العملية']) &&
             p['رمز المادة'] === saleRecord['رمز المادة'],
 
-        // المفتاح 3:- (رمز المادة) + تاريخ صافي المبيعات اصغر من تاريخ صافي المشتريات بثلاثة أيام كحد اقصى
+        // المفتاح 3:- (رمز المادة) + تاريخ صافي المبيعات اصغر من تاريخ صافي المشتريات بثلاثة ايام كحد اقصى
         (p) => new Date(saleRecord['تاريخ العملية']) < new Date(p['تاريخ العملية']) &&
             new Date(p['تاريخ العملية']) - new Date(saleRecord['تاريخ العملية']) <= 3 * 24 * 60 * 60 * 1000 &&
             p['رمز المادة'] === saleRecord['رمز المادة'],
@@ -81,10 +94,10 @@ export const calculateBookInventory = (netPurchasesList, netSalesList) => {
 
             // البحث عن جميع السجلات المطابقة مع هذا المفتاح
             let matchingPurchases = sortedPurchases.filter(
-                p => p['الكمية'] > 0 && keyFunction(p)
+                p => compare(p['الكمية'], 0) > 0 && keyFunction(p)
             );
 
-            // ترتيب السجلات المطابقة: الأحدث ثم الأقدم
+            // ترتيب السجلات المطابقة: الاحدث ثم الاقدم
             matchingPurchases.sort((a, b) => {
                 const dateDiff = new Date(b['تاريخ العملية']) - new Date(a['تاريخ العملية']);
                 if (dateDiff !== 0) return dateDiff;
@@ -98,11 +111,11 @@ export const calculateBookInventory = (netPurchasesList, netSalesList) => {
                 if (purchaseIndex === -1) continue;
 
                 const purchaseQty = sortedPurchases[purchaseIndex]['الكمية'];
-                const saleQty = parseFloat(saleRecord['الكمية']);
+                const saleQty = roundToDecimalPlaces(saleRecord['الكمية'] || 0, 2);
 
-                if (purchaseQty >= saleQty) {
-                    // التطابق كامل: خصم كمية المبيعات بالكامل
-                    sortedPurchases[purchaseIndex]['الكمية'] -= saleQty;
+                if (compare(purchaseQty, saleQty) >= 0) {
+                    // التطابق كامل: خصم كمية المبيعات بالكامل باستخدام الحسابات المالية الدقة
+                    sortedPurchases[purchaseIndex]['الكمية'] = subtract(sortedPurchases[purchaseIndex]['الكمية'], saleQty);
                     sortedPurchases[purchaseIndex]['ملاحظات'] = `مطابق (مفتاح ${keyIndex + 1})`;
                     matched = true;
                     usedKeyNumber = keyIndex + 1;
@@ -116,8 +129,8 @@ export const calculateBookInventory = (netPurchasesList, netSalesList) => {
 
                     break; // الانتهاء من هذا المفتاح
                 } else {
-                    // تطابق جزئي: خصم كمية المشتريات بالكامل واستمر
-                    sortedPurchases[purchaseIndex]['الكمية'] = 0;
+                    // تطابق جزئي: خصم كمية المشتريات بالكامل واستمر باستخدام الحسابات المالية الدقة
+                    sortedPurchases[purchaseIndex]['الكمية'] = new Decimal(0);
                     sortedPurchases[purchaseIndex]['ملاحظات'] = `مطابق جزئي (مفتاح ${keyIndex + 1})`;
                     matched = true;
                     usedKeyNumber = keyIndex + 1;
@@ -129,15 +142,15 @@ export const calculateBookInventory = (netPurchasesList, netSalesList) => {
                         'ملاحظات': `مطابق جزئي (مفتاح ${keyIndex + 1})`,
                     });
 
-                    // تحديث كمية المبيعات المتبقية
-                    saleRecord['الكمية'] = saleQty - purchaseQty;
+                    // تحديث كمية المبيعات المتبقية باستخدام الحسابات المالية الدقة
+                    saleRecord['الكمية'] = subtract(saleQty, purchaseQty);
                 }
             }
 
             if (matched) break;
         }
 
-        // إذا لم يتم العثور على مطابقة، أضف السجل مع ملاحظة "لايوجد مشتريات"
+        // إذا لم يتم العثور على مطابقة، اضف السجل مع ملاحظة "لايوجد مشتريات"
         if (!matched) {
             bookInventoryList.push({
                 ...saleRecord,

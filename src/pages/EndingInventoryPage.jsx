@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { Typography, Table, Alert, Radio } from 'antd';
+import { formatQuantity, formatMoney } from '../utils/financialCalculations.js';
+import PrintExportButtons from '../components/PrintExportButtons';
 
 const { Title } = Typography;
 
@@ -9,12 +11,12 @@ function EndingInventoryPage({ data }) {
     if (!data) {
         return (
             <div style={{ padding: '20px' }}>
-                <Alert message="لا توجد بيانات" description="يرجى استيراد ملف Excel أولاً لمعالجة البيانات." type="info" showIcon />
+                <Alert message="لا توجد بيانات" description="يرجى استيراد ملف Excel اولاً لمعالجة البيانات." type="info" showIcon />
             </div>
         );
     }
 
-    // تم تعريف الأعمدة بناءً على المخرجات النهائية للمنطق المحدث
+    // تم تعريف الاعمدة بناءً على المخرجات النهائية للمنطق المحدث
     const columns = [
         { title: 'م', dataIndex: 'م', key: 'م', width: 60, align: 'center' },
         { title: 'رمز المادة', dataIndex: 'رمز المادة', key: 'رمز المادة', width: 120 },
@@ -22,7 +24,7 @@ function EndingInventoryPage({ data }) {
         { title: 'الوحدة', dataIndex: 'الوحدة', key: 'الوحدة', width: 80, align: 'center' },
         {
             title: 'الكمية', dataIndex: 'الكمية', key: 'الكمية', width: 100, align: 'left',
-            render: (text) => (parseFloat(text) || 0).toFixed(2)
+            render: (text) => formatQuantity(text)
         },
         { title: 'تاريخ الصلاحية', dataIndex: 'تاريخ الصلاحية', key: 'تاريخ الصلاحية', width: 120 },
         { title: 'القائمة', dataIndex: 'القائمة', key: 'القائمة', width: 80, align: 'center' },
@@ -30,11 +32,11 @@ function EndingInventoryPage({ data }) {
         { title: 'ملاحظات', dataIndex: 'ملاحظات', key: 'ملاحظات', width: 100, align: 'center' },
         {
             title: 'كمية المشتريات', dataIndex: 'كمية المشتريات', key: 'كمية المشتريات', width: 120, align: 'left',
-            render: (text) => (parseFloat(text) || 0).toFixed(2)
+            render: (text) => formatQuantity(text)
         },
         {
             title: 'الافرادي', dataIndex: 'الافرادي', key: 'الافرادي', width: 80, align: 'left',
-            render: (text) => (parseInt(text, 10) || 0).toLocaleString('ar-EG')
+            render: (text) => formatMoney(text)
         },
         { title: 'تاريخ الشراء', dataIndex: 'تاريخ الشراء', key: 'تاريخ الشراء', width: 120 },
         { title: 'المورد', dataIndex: 'المورد', key: 'المورد' },
@@ -42,7 +44,7 @@ function EndingInventoryPage({ data }) {
         { title: 'بيان الحركة', dataIndex: 'بيان الحركة', key: 'بيان الحركة', width: 100, align: 'center' },
         {
             title: 'الاجمالي', dataIndex: 'الاجمالي', key: 'الاجمالي', width: 100, align: 'left',
-            render: (text) => (parseInt(text, 10) || 0).toLocaleString('ar-EG')
+            render: (text) => formatMoney(text)
         },
     ];
 
@@ -50,6 +52,14 @@ function EndingInventoryPage({ data }) {
         <div style={{ padding: '20px' }}>
             <Title level={4}>تقرير المخزون النهائي</Title>
             <p>عرض نتيجة مطابقة الجرد الفعلي مع صافي المشتريات، مع إضافة المرتجعات اليتيمة.</p>
+
+            {/* Print/Export buttons */}
+            <PrintExportButtons 
+                data={selectedTab === 'endingInventory' ? data.endingInventoryList : data.listB}
+                title={`تقرير المخزون النهائي - ${selectedTab === 'endingInventory' ? 'المخزون النهائي' : 'قائمة ب: مرتجع المشتريات اليتيمة'}`}
+                columns={columns}
+                filename={selectedTab === 'endingInventory' ? 'ending-inventory' : 'orphan-purchase-returns'}
+            />
 
             <Radio.Group value={selectedTab} onChange={(e) => setSelectedTab(e.target.value)} style={{ marginBottom: 16 }}>
                 <Radio.Button value="endingInventory">المخزون النهائي ({data.endingInventoryList.length})</Radio.Button>
@@ -70,7 +80,7 @@ function EndingInventoryPage({ data }) {
                 <Table
                     title={() => <strong>قائمة ب: مرتجع المشتريات اليتيمة ({data.listB.length} سجل)</strong>}
                     dataSource={data.listB}
-                    columns={columns} // يمكن استخدام نفس الأعمدة مع إخفاء بعضها إذا لزم الأمر
+                    columns={columns} // يمكن استخدام نفس الاعمدة مع إخفاء بعضها إذا لزم الامر
                     rowKey="م"
                     scroll={{ x: 1800 }}
                     pagination={{ pageSize: 25 }}

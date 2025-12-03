@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Typography, Select, Card, Row, Col, Table, Alert } from 'antd';
+import { formatQuantity, formatMoney } from '../utils/financialCalculations.js';
 
 const { Title } = Typography;
 const { Option } = Select;
@@ -7,7 +8,7 @@ const { Option } = Select;
 function SupplierMovementPage({ data }) {
     const [selectedSupplier, setSelectedSupplier] = useState(null);
 
-    // 1. إنشاء قائمة فريدة من أسماء الموردين للقائمة المنسدلة
+    // 1. إنشاء قائمة فريدة من اسماء الموردين للقائمة المنسدلة
     const supplierOptions = useMemo(() => {
         if (!data?.suppliersPayables) return [];
         const uniqueSuppliers = [...new Set(data.suppliersPayables.map(item => item['المورد']))];
@@ -48,31 +49,31 @@ function SupplierMovementPage({ data }) {
         });
     }, [supplierInventory, salesMap]);
     
-    // 6. تصفية الأصناف المعدة للإرجاع
+    // 6. تصفية الاصناف المعدة للإرجاع
     const returnableInventoryData = useMemo(() => {
         return detailedInventoryData.filter(item => item['بيان الحركة'] === 'راكد تماما' || item['بيان الحركة'] === 'مخزون زائد' || item['بيان الصلاحية'] === 'منتهي' || item['بيان الصلاحية'] === 'قريب جدا');
     }, [detailedInventoryData]);
 
 
-    // تعريف أعمدة جداول التفاصيل
+    // تعريف اعمدة جداول التفاصيل
     const detailColumns = [
         { title: 'م', dataIndex: 'م', key: 'م', width: 60, align: 'center' },
         { title: 'رمز المادة', dataIndex: 'رمز المادة', key: 'رمز المادة', width: 120 },
         { title: 'اسم المادة', dataIndex: 'اسم المادة', key: 'اسم المادة' },
         { title: 'الوحدة', dataIndex: 'الوحدة', key: 'الوحدة', width: 80, align: 'center' },
         { title: 'الكمية', dataIndex: 'الكمية', key: 'الكمية', width: 100, align: 'left',
-            render: (text) => (parseFloat(text) || 0).toFixed(2)
+            render: (text) => formatQuantity(text)
         },
         { title: 'افرادي الشراء', dataIndex: 'افرادي', key: 'افرادي', width: 90, align: 'left',
-            render: (text) => (parseInt(text, 10) || 0).toLocaleString('ar-EG')
+            render: (text) => formatMoney(text)
         },
         { title: 'اجمالي الشراء', dataIndex: 'الاجمالي', key: 'الاجمالي', width: 110, align: 'left',
-            render: (text) => (parseInt(text, 10) || 0).toLocaleString('ar-EG')
+            render: (text) => formatMoney(text)
         },
         { title: 'تاريخ الصلاحية', dataIndex: 'تاريخ الصلاحية', key: 'تاريخ الصلاحية', width: 120 },
         { title: 'عمر الصنف', dataIndex: 'عمر الصنف', key: 'عمر الصنف', width: 100, align: 'center' },
         { title: 'مبيعات الصنف', dataIndex: 'مبيعات الصنف', key: 'مبيعات الصنف', width: 100, align: 'left',
-            render: (text) => (parseFloat(text) || 0).toFixed(2)
+            render: (text) => formatQuantity(text)
         },
         { title: 'بيان الصلاحية', dataIndex: 'بيان الصلاحية', key: 'بيان الصلاحية', width: 100, align: 'center' },
         { title: 'بيان الحركة', dataIndex: 'بيان الحركة', key: 'بيان الحركة', width: 100, align: 'center' },
@@ -82,7 +83,7 @@ function SupplierMovementPage({ data }) {
     if (!data) {
         return (
             <div style={{ padding: '20px' }}>
-                <Alert message="لا توجد بيانات" description="يرجى استيراد ملف Excel أولاً لمعالجة البيانات." type="info" showIcon />
+                <Alert message="لا توجد بيانات" description="يرجى استيراد ملف Excel اولاً لمعالجة البيانات." type="info" showIcon />
             </div>
         );
     }
@@ -90,7 +91,7 @@ function SupplierMovementPage({ data }) {
     return (
         <div style={{ padding: '20px' }}>
             <Title level={4}>تقرير حركة مورد</Title>
-            <p>اختر موردًا لعرض تفاصيل الأصناف والإجماليات الخاصة به.</p>
+            <p>اختر موردًا لعرض تفاصيل الاصناف والإجماليات الخاصة به.</p>
 
             <Select
                 showSearch
@@ -111,38 +112,38 @@ function SupplierMovementPage({ data }) {
 
             {selectedSupplier && selectedSupplierPayable && (
                 <>
-                    {/* القسم الأول: الاجماليات */}
+                    {/* القسم الاول: الاجماليات */}
                     <Card title="تقرير اجمالي المورد" style={{ marginBottom: 24 }}>
                         <Row gutter={16}>
                             <Col span={4}><strong>رصيد المورد:</strong></Col>
-                            <Col span={4}>{parseInt(selectedSupplierPayable['الرصيد'] || 0).toLocaleString('ar-EG')}</Col>
+                            <Col span={4}>{formatMoney(parseInt(selectedSupplierPayable['الرصيد'] || 0))}</Col>
                             
                             <Col span={4}><strong>قيمة المخزون:</strong></Col>
-                            <Col span={4}>{parseInt(selectedSupplierPayable['قيمة المخزون'] || 0).toLocaleString('ar-EG')}</Col>
+                            <Col span={4}>{formatMoney(parseInt(selectedSupplierPayable['قيمة المخزون'] || 0))}</Col>
 
                             <Col span={4}><strong>الاستحقاق:</strong></Col>
-                            <Col span={4}>{parseInt(selectedSupplierPayable['الاستحقاق'] || 0).toLocaleString('ar-EG')}</Col>
+                            <Col span={4}>{formatMoney(parseInt(selectedSupplierPayable['الاستحقاق'] || 0))}</Col>
                         </Row>
                         <Row gutter={16} style={{ marginTop: 16 }}>
                             <Col span={4}><strong>المبلغ المستحق:</strong></Col>
-                            <Col span={4}>{parseInt(selectedSupplierPayable['المبلغ المستحق'] || 0).toLocaleString('ar-EG')}</Col>
+                            <Col span={4}>{formatMoney(parseInt(selectedSupplierPayable['المبلغ المستحق'] || 0))}</Col>
 
                             <Col span={4}><strong>قيمة المخزون الراكد:</strong></Col>
-                            <Col span={4}>{parseInt(selectedSupplierPayable['راكد تماما'] || 0).toLocaleString('ar-EG')}</Col>
+                            <Col span={4}>{formatMoney(parseInt(selectedSupplierPayable['راكد تماما'] || 0))}</Col>
 
                             <Col span={4}><strong>قيمة المخزون الزائد:</strong></Col>
-                            <Col span={4}>{parseInt(selectedSupplierPayable['مخزون زائد'] || 0).toLocaleString('ar-EG')}</Col>
+                            <Col span={4}>{formatMoney(parseInt(selectedSupplierPayable['مخزون زائد'] || 0))}</Col>
                         </Row>
                         <Row gutter={16} style={{ marginTop: 16 }}>
                             <Col span={4}><strong>قيمة الاحتياج:</strong></Col>
-                            <Col span={4}>{parseInt(selectedSupplierPayable['الاحتياج'] || 0).toLocaleString('ar-EG')}</Col>
+                            <Col span={4}>{formatMoney(parseInt(selectedSupplierPayable['الاحتياج'] || 0))}</Col>
 
                             <Col span={4}><strong>قيمة المعد للارجاع:</strong></Col>
-                            <Col span={4}>{parseInt(selectedSupplierPayable['معد للارجاع'] || 0).toLocaleString('ar-EG')}</Col>
+                            <Col span={4}>{formatMoney(parseInt(selectedSupplierPayable['معد للارجاع'] || 0))}</Col>
                         </Row>
                     </Card>
 
-                    {/* القسم الثاني: تفاصيل الأصناف */}
+                    {/* القسم الثاني: تفاصيل الاصناف */}
                     <Card title={`تقرير مخزون مورد (${detailedInventoryData.length} صنف)`} style={{ marginBottom: 24 }}>
                         <Table
                             dataSource={detailedInventoryData}
@@ -153,7 +154,7 @@ function SupplierMovementPage({ data }) {
                         />
                     </Card>
 
-                    {/* القسم الثالث: تفاصيل الأصناف المعدة للإرجاع */}
+                    {/* القسم الثالث: تفاصيل الاصناف المعدة للإرجاع */}
                     <Card title={`تقرير مخزون مورد معد للارجاع (${returnableInventoryData.length} صنف)`}>
                         <Table
                             dataSource={returnableInventoryData}

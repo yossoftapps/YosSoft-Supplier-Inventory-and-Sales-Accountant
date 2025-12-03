@@ -11,7 +11,7 @@ import { calculateSalesCost } from '../logic/salesCostLogic';
 import { calculateSupplierPayables } from '../logic/supplierPayablesLogic';
 import { calculateBookInventory } from '../logic/bookInventoryLogic';
 
-// استيراد أداة التحقق من الصحة
+// استيراد اداة التحقق من الصحة
 import { validateAllTables, normalizeData } from '../validator/schemaValidator';
 
 const { Title, Text } = Typography;
@@ -20,6 +20,28 @@ function ImportDataPage({ onDataProcessed }) {
     const [fileName, setFileName] = useState(null);
     const [statusMessage, setStatusMessage] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+
+    // دالة مساعدة لتحديد فهرس العمود بناءً على اسم العمود
+    const getColumnIndex = (headers, columnName) => {
+        return headers.indexOf(columnName);
+    };
+
+    // دالة مساعدة لطباعة محتوى البيانات بشكل منظم
+    const debugPrintData = (data, title) => {
+        console.log(`=== ${title} ===`);
+        if (!data || data.length === 0) {
+            console.log('No data available');
+            return;
+        }
+        console.log('Headers:', data[0]);
+        console.log('Row count:', data.length - 1); // -1 for header row
+        if (data.length > 1) {
+            console.log('First few rows:');
+            for (let i = 1; i < Math.min(4, data.length); i++) {
+                console.log(`  Row ${i}:`, data[i]);
+            }
+        }
+    };
 
     const handleFileSelect = async () => {
         setIsLoading(true);
@@ -44,9 +66,16 @@ function ImportDataPage({ onDataProcessed }) {
             if (readResult.success) {
                 const rawData = readResult.data;
                 
+                // Debug print raw data
+                debugPrintData(rawData.purchases, 'RAW PURCHASES DATA');
+                debugPrintData(rawData.sales, 'RAW SALES DATA');
+                debugPrintData(rawData.physicalInventory, 'RAW PHYSICAL INVENTORY DATA');
+                debugPrintData(rawData.supplierbalances, 'RAW SUPPLIER BALANCES DATA');
+                
                 // --- التحقق من صحة البيانات ---
                 console.log('بدء التحقق من صحة البيانات');
                 const validationResults = validateAllTables(rawData);
+                console.log('Validation results:', validationResults);
                 
                 if (!validationResults.isValid) {
                     console.error('فشل التحقق من صحة البيانات:', validationResults.errors);
@@ -59,6 +88,7 @@ function ImportDataPage({ onDataProcessed }) {
                 
                 // --- التحقق من كفاية البيانات لإنشاء التقارير ---
                 const dataSufficiencyCheck = checkDataSufficiency(rawData);
+                console.log('Data sufficiency check:', dataSufficiencyCheck);
                 if (!dataSufficiencyCheck.isSufficient) {
                     console.error('بيانات غير كافية لإنشاء التقارير:', dataSufficiencyCheck.errors);
                     setStatusMessage(`بيانات غير كافية لإنشاء التقارير: ${dataSufficiencyCheck.errors.join(', ')}`);
@@ -71,11 +101,18 @@ function ImportDataPage({ onDataProcessed }) {
                     purchases: normalizeData(rawData.purchases, 'purchases'),
                     sales: normalizeData(rawData.sales, 'sales'),
                     physicalInventory: normalizeData(rawData.physicalInventory, 'physicalInventory'),
-                    supplierbalances: normalizeData(rawData.supplierbalances, 'supplierBalances')
+                    supplierbalances: normalizeData(rawData.supplierbalances, 'supplierbalances')
                 };
+                
+                // Debug print normalized data
+                debugPrintData(normalizedData.purchases, 'NORMALIZED PURCHASES DATA');
+                debugPrintData(normalizedData.sales, 'NORMALIZED SALES DATA');
+                debugPrintData(normalizedData.physicalInventory, 'NORMALIZED PHYSICAL INVENTORY DATA');
+                debugPrintData(normalizedData.supplierbalances, 'NORMALIZED SUPPLIER BALANCES DATA');
                 
                 // --- التحقق من وجود الحقول المالية المطلوبة وصحتها ---
                 const financialDataCheck = checkFinancialDataIntegrity(normalizedData);
+                console.log('Financial data check:', financialDataCheck);
                 if (!financialDataCheck.isValid) {
                     console.error('بيانات مالية غير صحيحة:', financialDataCheck.errors);
                     setStatusMessage(`بيانات مالية غير صحيحة: ${financialDataCheck.errors.join(', ')}`);
@@ -84,18 +121,90 @@ function ImportDataPage({ onDataProcessed }) {
                 }
                 
                 // --- مرحلة المعالجة المتسلسلة ---
-
+                
                 // 1. معالجة المشتريات
                 console.log('Raw purchases data:', normalizedData.purchases);
-                const allPurchases = normalizedData.purchases.filter(row => row[9] === 'مشتريات');
-                const purchaseReturns = normalizedData.purchases.filter(row => row[9] === 'مرتجع');
+                console.log('Raw sales data:', normalizedData.sales);
+                
+                // تحديد فهارس الأعمدة بشكل ديناميكي
+                let purchaseOperationTypeIndex = -1;
+                let salesOperationTypeIndex = -1;
+                
+                if (normalizedData.purchases && normalizedData.purchases.length > 0) {
+                    const purchaseHeaders = normalizedData.purchases[0];
+                    purchaseOperationTypeIndex = getColumnIndex(purchaseHeaders, 'نوع العملية');
+                    console.log('Purchase headers:', purchaseHeaders);
+                    console.log('Purchase operation type index:', purchaseOperationTypeIndex);
+                }
+                
+                if (normalizedData.sales && normalizedData.sales.length > 0) {
+                    const salesHeaders = normalizedData.sales[0];
+                    salesOperationTypeIndex = getColumnIndex(salesHeaders, 'نوع العملية');
+                    console.log('Sales headers:', salesHeaders);
+                    console.log('Sales operation type index:', salesOperationTypeIndex);
+                }
+                
+                // تصفية المشتريات والمرتجعات بشكل ديناميكي
+                let allPurchases = [];
+                let purchaseReturns = [];
+                
+                if (normalizedData.purchases && normalizedData.purchases.length > 0 && purchaseOperationTypeIndex !== -1) {
+                    console.log('Filtering purchases using dynamic column index...');
+                    allPurchases = normalizedData.purchases.filter(row => {
+                        const value = row[purchaseOperationTypeIndex];
+                        const result = value && value.toString().trim() === 'مشتريات';
+                        console.log(`Row operation type: "${value}", Filter result: ${result}`);
+                        return result;
+                    });
+                    purchaseReturns = normalizedData.purchases.filter(row => {
+                        const value = row[purchaseOperationTypeIndex];
+                        const result = value && value.toString().trim() === 'مرتجع';
+                        console.log(`Row operation type: "${value}", Filter result: ${result}`);
+                        return result;
+                    });
+                } else {
+                    console.log('Filtering purchases using fallback method...');
+                    // إذا لم نتمكن من تحديد الفهرس، نستخدم الطريقة القديمة كاحتياطي
+                    allPurchases = normalizedData.purchases.filter(row => row[9] === 'مشتريات');
+                    purchaseReturns = normalizedData.purchases.filter(row => row[9] === 'مرتجع');
+                }
+                
                 console.log('Filtered purchases:', allPurchases.length, 'returns:', purchaseReturns.length);
+                console.log('Sample purchases:', allPurchases.slice(0, 2));
+                console.log('Sample purchase returns:', purchaseReturns.slice(0, 2));
+                
                 const netPurchasesResult = calculateNetPurchases(allPurchases, purchaseReturns);
                 console.log('Net purchases result:', netPurchasesResult);
 
                 // 2. معالجة المبيعات
-                const allSales = normalizedData.sales.filter(row => row[8] === 'مبيعات');
-                const salesReturns = normalizedData.sales.filter(row => row[8] === 'مرتجع');
+                let allSales = [];
+                let salesReturns = [];
+                
+                if (normalizedData.sales && normalizedData.sales.length > 0 && salesOperationTypeIndex !== -1) {
+                    console.log('Filtering sales using dynamic column index...');
+                    allSales = normalizedData.sales.filter(row => {
+                        const value = row[salesOperationTypeIndex];
+                        const result = value && value.toString().trim() === 'مبيعات';
+                        console.log(`Row operation type: "${value}", Filter result: ${result}`);
+                        return result;
+                    });
+                    salesReturns = normalizedData.sales.filter(row => {
+                        const value = row[salesOperationTypeIndex];
+                        const result = value && value.toString().trim() === 'مرتجع';
+                        console.log(`Row operation type: "${value}", Filter result: ${result}`);
+                        return result;
+                    });
+                } else {
+                    console.log('Filtering sales using fallback method...');
+                    // إذا لم نتمكن من تحديد الفهرس، نستخدم الطريقة القديمة كاحتياطي
+                    allSales = normalizedData.sales.filter(row => row[8] === 'مبيعات');
+                    salesReturns = normalizedData.sales.filter(row => row[8] === 'مرتجع');
+                }
+                
+                console.log('Filtered sales:', allSales.length, 'returns:', salesReturns.length);
+                console.log('Sample sales:', allSales.slice(0, 2));
+                console.log('Sample sales returns:', salesReturns.slice(0, 2));
+                
                 const netSalesResult = calculateNetSales(allSales, salesReturns);
 
                 // 3. معالجة الجرد الفعلي
@@ -140,6 +249,18 @@ function ImportDataPage({ onDataProcessed }) {
                     bookInventoryResult
                 ]);
                 
+                console.log('=== PROCESSING RESULTS SUMMARY ===');
+                console.log('Net Purchases List:', netPurchasesResult.netPurchasesList?.length || 0);
+                console.log('Net Purchases Orphan Returns:', netPurchasesResult.orphanReturnsList?.length || 0);
+                console.log('Net Sales List:', netSalesResult.netSalesList?.length || 0);
+                console.log('Net Sales Orphan Returns:', netSalesResult.orphanReturnsList?.length || 0);
+                console.log('Physical Inventory List:', physicalInventoryResult.processedList?.length || 0);
+                console.log('Ending Inventory List:', endingInventoryResult.endingInventoryList?.length || 0);
+                console.log('Book Inventory List:', bookInventoryResult?.length || 0);
+                console.log('Excess Inventory List:', excessInventoryResult?.length || 0);
+                console.log('Sales Cost List:', salesCostResult?.costOfSalesList?.length || 0);
+                console.log('Suppliers Payables List:', suppliersPayablesResult?.length || 0);
+                
                 if (!processingResultsCheck.isValid) {
                     console.error('نتائج المعالجة غير صحيحة:', processingResultsCheck.errors);
                     setStatusMessage(`نتائج المعالجة غير صحيحة: ${processingResultsCheck.errors.join(', ')}`);
@@ -166,7 +287,7 @@ function ImportDataPage({ onDataProcessed }) {
             }
         } catch (error) {
             console.error("Processing Error:", error);
-            setStatusMessage(`حدث خطأ غير متوقع: ${error.message}`);
+            setStatusMessage(`حدث خطا غير متوقع: ${error.message}`);
         } finally {
             setIsLoading(false);
         }
@@ -177,33 +298,33 @@ function ImportDataPage({ onDataProcessed }) {
         const errors = [];
         let isSufficient = true;
         
-        // التحقق من توفر ملفات الإدخال الأربعة
+        // التحقق من توفر ملفات الإدخال الاربعة
         const requiredTables = ['purchases', 'sales', 'physicalInventory', 'supplierbalances'];
         for (const table of requiredTables) {
             if (!rawData[table] || rawData[table].length < 2) { // Header + at least 1 row
-                errors.push(`بيانات ${table} مفقودة أو فارغة`);
+                errors.push(`بيانات ${table} مفقودة او فارغة`);
                 isSufficient = false;
             }
         }
         
         // التحقق من وجود بيانات كافية في كل جدول
         if (rawData.purchases && rawData.purchases.length < 2) {
-            errors.push('بيانات المشتريات غير كافية (يجب أن تحتوي على صفوف بيانات)');
+            errors.push('بيانات المشتريات غير كافية (يجب ان تحتوي على صفوف بيانات)');
             isSufficient = false;
         }
         
         if (rawData.sales && rawData.sales.length < 2) {
-            errors.push('بيانات المبيعات غير كافية (يجب أن تحتوي على صفوف بيانات)');
+            errors.push('بيانات المبيعات غير كافية (يجب ان تحتوي على صفوف بيانات)');
             isSufficient = false;
         }
         
         if (rawData.physicalInventory && rawData.physicalInventory.length < 2) {
-            errors.push('بيانات الجرد الفعلي غير كافية (يجب أن تحتوي على صفوف بيانات)');
+            errors.push('بيانات الجرد الفعلي غير كافية (يجب ان تحتوي على صفوف بيانات)');
             isSufficient = false;
         }
         
         if (rawData.supplierbalances && rawData.supplierbalances.length < 2) {
-            errors.push('بيانات أرصدة الموردين غير كافية (يجب أن تحتوي على صفوف بيانات)');
+            errors.push('بيانات ارصدة الموردين غير كافية (يجب ان تحتوي على صفوف بيانات)');
             isSufficient = false;
         }
         
@@ -215,7 +336,7 @@ function ImportDataPage({ onDataProcessed }) {
         const errors = [];
         let isValid = true;
         
-        // التحقق من أن الكميات والأفرادي أرقام صحيحة موجبة
+        // التحقق من ان الكميات والافرادي ارقام صحيحة موجبة
         const checkFinancialFields = (data, tableName) => {
             if (!data || data.length < 2) return;
             
@@ -235,7 +356,7 @@ function ImportDataPage({ onDataProcessed }) {
                     }
                 }
                 
-                // التحقق من الأفرادي
+                // التحقق من الافرادي
                 if (unitPriceIndex !== -1 && unitPriceIndex < row.length) {
                     const unitPrice = parseFloat(row[unitPriceIndex]);
                     if (isNaN(unitPrice) || unitPrice < 0) {
@@ -257,7 +378,7 @@ function ImportDataPage({ onDataProcessed }) {
         const errors = [];
         let isValid = true;
         
-        // التحقق من أن جميع النتائج موجودة وليست فارغة
+        // التحقق من ان جميع النتائج موجودة وليست فارغة
         for (let i = 0; i < results.length; i++) {
             const result = results[i];
             if (!result) {
@@ -272,7 +393,7 @@ function ImportDataPage({ onDataProcessed }) {
     return (
         <div style={{ padding: '20px' }}>
             <Title level={4}>استيراد البيانات من ملف Excel</Title>
-            <p>يرجى اختيار ملف Excel الذي يحتوي على بيانات المشتريات، المبيعات، المخزون، وأرصدة الموردين.</p>
+            <p>يرجى اختيار ملف Excel الذي يحتوي على بيانات المشتريات، المبيعات، المخزون، وارصدة الموردين.</p>
 
             <Space direction="vertical" size="large" style={{ width: '100%' }}>
                 <Button type="primary" size="large" onClick={handleFileSelect} loading={isLoading}>
@@ -280,7 +401,7 @@ function ImportDataPage({ onDataProcessed }) {
                 </Button>
 
                 {fileName && <Alert message="الملف المختار" description={<Text strong>{fileName}</Text>} type="info" showIcon />}
-                {statusMessage && <Alert message="الحالة" description={statusMessage} type={statusMessage.includes('فشل') || statusMessage.includes('خطأ') ? 'error' : 'success'} showIcon />}
+                {statusMessage && <Alert message="الحالة" description={statusMessage} type={statusMessage.includes('فشل') || statusMessage.includes('خطا') ? 'error' : 'success'} showIcon />}
             </Space>
         </div>
     );

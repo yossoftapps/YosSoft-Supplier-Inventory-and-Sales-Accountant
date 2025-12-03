@@ -1,3 +1,16 @@
+// استيراد ادوات الحسابات المالية الدقة
+import { 
+  roundToInteger, 
+  roundToDecimalPlaces, 
+  formatMoney, 
+  formatQuantity,
+  multiply,
+  subtract,
+  add,
+  compare,
+  Decimal
+} from '../utils/financialCalculations.js';
+
 // دالة مساعدة لتحويل مصفوفة المصفوفات إلى مصفوفة كائنات
 const convertToObjects = (data) => {
     if (!data || data.length < 2) return [];
@@ -30,8 +43,9 @@ export const calculateExcessInventory = (physicalInventoryRaw, salesRaw) => {
             const saleDate = new Date(sale['تاريخ العملية']);
             if (saleDate >= ninetyDaysAgo) {
                 const code = sale['رمز المادة'];
-                const quantity = parseFloat(sale['الكمية']) || 0;
-                salesMap.set(code, (salesMap.get(code) || 0) + quantity);
+                const quantity = roundToDecimalPlaces(sale['الكمية'] || 0, 2);
+                const currentValue = salesMap.get(code) || new Decimal(0);
+                salesMap.set(code, add(currentValue, quantity));
             }
         }
     }
@@ -40,31 +54,32 @@ export const calculateExcessInventory = (physicalInventoryRaw, salesRaw) => {
     const inventoryMap = new Map();
     for (const item of physicalInventory) {
         const code = item['رمز المادة'];
-        const quantity = parseFloat(item['الكمية']) || 0;
+        const quantity = roundToDecimalPlaces(item['الكمية'] || 0, 2);
         if (!inventoryMap.has(code)) {
             inventoryMap.set(code, {
                 'رمز المادة': code,
                 'اسم المادة': item['اسم المادة'],
                 'الوحدة': item['الوحدة'],
-                'الكمية': 0,
+                'الكمية': new Decimal(0),
             });
         }
-        inventoryMap.get(code)['الكمية'] += quantity;
+        const currentValue = inventoryMap.get(code)['الكمية'];
+        inventoryMap.get(code)['الكمية'] = add(currentValue, quantity);
     }
 
     // 5. إنشاء التقرير النهائي بحساب الفائض وبيانه
     const excessInventoryReport = [];
     for (const [code, inventoryItem] of inventoryMap.entries()) {
         const totalQuantity = inventoryItem['الكمية'];
-        const totalSales = salesMap.get(code) || 0;
-        const excess = totalQuantity - totalSales;
+        const totalSales = salesMap.get(code) || new Decimal(0);
+        const excess = subtract(totalQuantity, totalSales);
 
         let statusText = '';
-        if (totalSales === 0 && totalQuantity > 0) {
+        if (compare(totalSales, 0) === 0 && compare(totalQuantity, 0) > 0) {
             statusText = 'راكد تماما';
-        } else if (excess < 0) {
+        } else if (compare(excess, 0) < 0) {
             statusText = 'احتياج';
-        } else if (excess > 0) {
+        } else if (compare(excess, 0) > 0) {
             statusText = 'مخزون زائد';
         } else {
             statusText = 'مناسب';
