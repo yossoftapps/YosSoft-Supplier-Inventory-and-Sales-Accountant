@@ -20,6 +20,7 @@ function ImportDataPage({ onDataProcessed }) {
     const [fileName, setFileName] = useState(null);
     const [statusMessage, setStatusMessage] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+    const [diagnostics, setDiagnostics] = useState(null);
 
     // دالة مساعدة لتحديد فهرس العمود بناءً على اسم العمود
     const getColumnIndex = (headers, columnName) => {
@@ -80,6 +81,7 @@ function ImportDataPage({ onDataProcessed }) {
                 if (!validationResults.isValid) {
                     console.error('فشل التحقق من صحة البيانات:', validationResults.errors);
                     setStatusMessage(`فشل التحقق من صحة البيانات: ${validationResults.errors.join(', ')}`);
+                    setDiagnostics({ validationResults });
                     setIsLoading(false);
                     return;
                 }
@@ -92,6 +94,7 @@ function ImportDataPage({ onDataProcessed }) {
                 if (!dataSufficiencyCheck.isSufficient) {
                     console.error('بيانات غير كافية لإنشاء التقارير:', dataSufficiencyCheck.errors);
                     setStatusMessage(`بيانات غير كافية لإنشاء التقارير: ${dataSufficiencyCheck.errors.join(', ')}`);
+                    setDiagnostics((d) => ({ ...(d || {}), dataSufficiencyCheck }));
                     setIsLoading(false);
                     return;
                 }
@@ -116,6 +119,7 @@ function ImportDataPage({ onDataProcessed }) {
                 if (!financialDataCheck.isValid) {
                     console.error('بيانات مالية غير صحيحة:', financialDataCheck.errors);
                     setStatusMessage(`بيانات مالية غير صحيحة: ${financialDataCheck.errors.join(', ')}`);
+                    setDiagnostics((d) => ({ ...(d || {}), financialDataCheck }));
                     setIsLoading(false);
                     return;
                 }
@@ -264,9 +268,25 @@ function ImportDataPage({ onDataProcessed }) {
                 if (!processingResultsCheck.isValid) {
                     console.error('نتائج المعالجة غير صحيحة:', processingResultsCheck.errors);
                     setStatusMessage(`نتائج المعالجة غير صحيحة: ${processingResultsCheck.errors.join(', ')}`);
+                    setDiagnostics((d) => ({ ...(d || {}), processingResultsCheck }));
                     setIsLoading(false);
                     return;
                 }
+                // Populate diagnostics summary for UI
+                setDiagnostics({
+                    validationResults,
+                    dataSufficiencyCheck,
+                    financialDataCheck,
+                    processingResultsCheck,
+                    summary: {
+                        netPurchasesCount: netPurchasesResult.netPurchasesList?.length || 0,
+                        netPurchasesOrphans: netPurchasesResult.orphanReturnsList?.length || 0,
+                        netSalesCount: netSalesResult.netSalesList?.length || 0,
+                        netSalesOrphans: netSalesResult.orphanReturnsList?.length || 0,
+                        physicalInventoryCount: physicalInventoryResult.processedList?.length || 0,
+                        endingInventoryCount: endingInventoryResult.endingInventoryList?.length || 0,
+                    }
+                });
 
                 // إرسال جميع البيانات المعالجة إلى المكون الرئيسي (App.jsx)
                 onDataProcessed({
@@ -402,6 +422,33 @@ function ImportDataPage({ onDataProcessed }) {
 
                 {fileName && <Alert message="الملف المختار" description={<Text strong>{fileName}</Text>} type="info" showIcon />}
                 {statusMessage && <Alert message="الحالة" description={statusMessage} type={statusMessage.includes('فشل') || statusMessage.includes('خطا') ? 'error' : 'success'} showIcon />}
+                {diagnostics && (
+                    <div style={{ marginTop: 12 }}>
+                        <Alert
+                            message="ملخّص التحقق والمعالجة"
+                            description={<div>
+                                <div>Net Purchases: {diagnostics.summary?.netPurchasesCount} (orphans: {diagnostics.summary?.netPurchasesOrphans})</div>
+                                <div>Net Sales: {diagnostics.summary?.netSalesCount} (orphans: {diagnostics.summary?.netSalesOrphans})</div>
+                                <div>Physical Inventory: {diagnostics.summary?.physicalInventoryCount}</div>
+                                <div>Ending Inventory: {diagnostics.summary?.endingInventoryCount}</div>
+                                {diagnostics.validationResults && !diagnostics.validationResults.isValid && (
+                                    <div style={{ marginTop: 8, color: 'red' }}>
+                                        <strong>Validation errors:</strong>
+                                        <ul>{diagnostics.validationResults.errors.map((e, i) => <li key={i}>{e}</li>)}</ul>
+                                    </div>
+                                )}
+                                {diagnostics.dataSufficiencyCheck && !diagnostics.dataSufficiencyCheck.isSufficient && (
+                                    <div style={{ marginTop: 8, color: 'orange' }}>
+                                        <strong>Data sufficiency issues:</strong>
+                                        <ul>{diagnostics.dataSufficiencyCheck.errors.map((e, i) => <li key={i}>{e}</li>)}</ul>
+                                    </div>
+                                )}
+                            </div>}
+                            type="info"
+                            showIcon
+                        />
+                    </div>
+                )}
             </Space>
         </div>
     );
