@@ -40,19 +40,19 @@ function PhysicalInventoryPage({ data }) {
             {/* Print/Export buttons */}
             <PrintExportButtons 
                 data={selectedTab === 'listE' ? data.listE : data.listF}
-                title={`تقرير الجرد الفعلي - ${selectedTab === 'listE' ? 'قائمة ه: الكميات الموجبة' : 'قائمة و: الكميات السالبة والمنتهية'}`}
+                title={`تقرير الجرد الفعلي - ${selectedTab === 'listE' ? 'قائمة E: الكميات الموجبة' : 'قائمة F: الكميات السالبة والمنتهية'}`}
                 columns={columns}
                 filename={selectedTab === 'listE' ? 'positive-inventory' : 'negative-expired-inventory'}
             />
 
             <Radio.Group value={selectedTab} onChange={(e) => setSelectedTab(e.target.value)} style={{ marginBottom: 16 }}>
-                <Radio.Button value="listE">قائمة ه: الكميات الموجبة ({data.listE.length})</Radio.Button>
-                <Radio.Button value="listF">قائمة و: الكميات السالبة والمنتهية ({data.listF.length})</Radio.Button>
+                <Radio.Button value="listE">قائمة E: الكميات الموجبة ({data.listE.length})</Radio.Button>
+                <Radio.Button value="listF">قائمة F: الكميات السالبة والمنتهية ({data.listF.length})</Radio.Button>
             </Radio.Group>
 
             {selectedTab === 'listE' && (
                 <Table
-                    title={() => <strong>قائمة ه: سجلات الكميات الموجبة (الكمية &gt; 0)</strong>}
+                    title={() => <strong>قائمة E: سجلات الكميات الموجبة (الكمية &gt; 0)</strong>}
                     dataSource={data.listE}
                     columns={columns}
                     rowKey="م"
@@ -75,7 +75,7 @@ function PhysicalInventoryPage({ data }) {
             )}
             {selectedTab === 'listF' && (
                 <Table
-                    title={() => <strong>قائمة و: سجلات الكميات السالبة + الصلاحية المنتهية</strong>}
+                    title={() => <strong>قائمة F: سجلات الكميات السالبة + الصلاحية المنتهية</strong>}
                     dataSource={data.listF}
                     columns={columns}
                     rowKey="م"

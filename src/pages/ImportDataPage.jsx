@@ -177,7 +177,7 @@ function ImportDataPage({ onDataProcessed }) {
                 console.log('Sample purchases:', allPurchases.slice(0, 2));
                 console.log('Sample purchase returns:', purchaseReturns.slice(0, 2));
                 
-                const netPurchasesResult = calculateNetPurchases(allPurchases, purchaseReturns);
+                const netPurchasesResult = calculateNetPurchases(allPurchases, purchaseReturns, normalizedData.purchases[0]);
                 console.log('Net purchases result:', netPurchasesResult);
 
                 // 2. معالجة المبيعات
@@ -209,7 +209,7 @@ function ImportDataPage({ onDataProcessed }) {
                 console.log('Sample sales:', allSales.slice(0, 2));
                 console.log('Sample sales returns:', salesReturns.slice(0, 2));
                 
-                const netSalesResult = calculateNetSales(allSales, salesReturns);
+                const netSalesResult = calculateNetSales(allSales, salesReturns, normalizedData.sales[0]);
 
                 // 3. معالجة الجرد الفعلي
                 const physicalInventoryResult = processPhysicalInventory(normalizedData.physicalInventory);

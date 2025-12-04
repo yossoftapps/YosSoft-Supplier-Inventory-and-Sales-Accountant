@@ -1,4 +1,4 @@
-// Utility module for precise financial calculations using Decimal.js
+﻿// Utility module for precise financial calculations using Decimal.js
 // Implements the rounding policies specified in the project specifications
 
 import Decimal from 'decimal.js';
@@ -22,7 +22,7 @@ export const roundToDecimalPlaces = (value, decimals = 2) => {
   if (value === null || value === undefined) {
     value = 0;
   }
-  const decimalValue = new Decimal(value);
+  const decimalValue = parseToDecimal(value);
   return decimalValue.toDecimalPlaces(decimals, Decimal.ROUND_HALF_UP);
 };
 
@@ -37,7 +37,7 @@ export const roundToInteger = (value) => {
   if (value === null || value === undefined) {
     value = 0;
   }
-  const decimalValue = new Decimal(value);
+  const decimalValue = parseToDecimal(value);
   return decimalValue.toDecimalPlaces(0, Decimal.ROUND_HALF_UP);
 };
 
@@ -76,11 +76,8 @@ export const parseQuantity = (value) => {
   }
   
   try {
-    const decimalValue = new Decimal(value);
-    // Check if it's a valid number
-    if (!decimalValue.isFinite()) {
-      return null;
-    }
+    const decimalValue = parseToDecimal(value);
+    if (!decimalValue.isFinite()) return null;
     return decimalValue;
   } catch (error) {
     return null;
@@ -99,12 +96,8 @@ export const parseMoney = (value) => {
   }
   
   try {
-    const decimalValue = new Decimal(value);
-    // Check if it's a valid number
-    if (!decimalValue.isFinite()) {
-      return null;
-    }
-    // Round to integer as per specifications
+    const decimalValue = parseToDecimal(value);
+    if (!decimalValue.isFinite()) return null;
     return roundToInteger(decimalValue);
   } catch (error) {
     return null;
@@ -121,8 +114,8 @@ export const multiply = (a, b) => {
   // Handle undefined or null values
   if (a === null || a === undefined) a = 0;
   if (b === null || b === undefined) b = 0;
-  const decimalA = new Decimal(a);
-  const decimalB = new Decimal(b);
+  const decimalA = parseToDecimal(a);
+  const decimalB = parseToDecimal(b);
   return decimalA.times(decimalB);
 };
 
@@ -136,8 +129,8 @@ export const divide = (a, b) => {
   // Handle undefined or null values
   if (a === null || a === undefined) a = 0;
   if (b === null || b === undefined) b = 0;
-  const decimalA = new Decimal(a);
-  const decimalB = new Decimal(b);
+  const decimalA = parseToDecimal(a);
+  const decimalB = parseToDecimal(b);
   if (decimalB.isZero()) {
     throw new Error('Division by zero');
   }
@@ -154,8 +147,8 @@ export const add = (a, b) => {
   // Handle undefined or null values
   if (a === null || a === undefined) a = 0;
   if (b === null || b === undefined) b = 0;
-  const decimalA = new Decimal(a);
-  const decimalB = new Decimal(b);
+  const decimalA = parseToDecimal(a);
+  const decimalB = parseToDecimal(b);
   return decimalA.plus(decimalB);
 };
 
@@ -169,8 +162,8 @@ export const subtract = (a, b) => {
   // Handle undefined or null values
   if (a === null || a === undefined) a = 0;
   if (b === null || b === undefined) b = 0;
-  const decimalA = new Decimal(a);
-  const decimalB = new Decimal(b);
+  const decimalA = parseToDecimal(a);
+  const decimalB = parseToDecimal(b);
   return decimalA.minus(decimalB);
 };
 
@@ -184,9 +177,53 @@ export const compare = (a, b) => {
   // Handle undefined or null values
   if (a === null || a === undefined) a = 0;
   if (b === null || b === undefined) b = 0;
-  const decimalA = new Decimal(a);
-  const decimalB = new Decimal(b);
+  const decimalA = parseToDecimal(a);
+  const decimalB = parseToDecimal(b);
   return decimalA.comparedTo(decimalB);
+};
+
+/**
+ * Sanitize and parse various number input formats into a Decimal instance
+ * Accepts numbers, Decimal instances, and strings with thousand separators
+ * or localized digits (Arabic-Indic). Returns a Decimal or throws.
+ */
+const parseToDecimal = (input) => {
+  // If already a Decimal instance
+  if (input instanceof Decimal) return input;
+
+  // Nullish -> zero
+  if (input === null || input === undefined || input === '') return new Decimal(0);
+
+  // If it's already a number, pass through
+  if (typeof input === 'number') return new Decimal(input);
+
+  // Otherwise assume string-like: sanitize
+  let s = String(input).trim();
+
+  // Remove common invisible/control characters (UTF control chars)
+  s = s.replace(/[\u0000-\u001F\u007F]/g, '');
+
+  // Convert Arabic-Indic digits (٠-٩) and Eastern Arabic-Indic (۰-۹) to western digits
+  s = s.replace(/[\u0660-\u0669]/g, ch => String(ch.charCodeAt(0) - 0x0660));
+  s = s.replace(/[\u06F0-\u06F9]/g, ch => String(ch.charCodeAt(0) - 0x06F0));
+
+  // Normalize commas/dots: handle decimal comma vs thousand separators
+  const commaCount = (s.match(/,/g) || []).length;
+  const dotCount = (s.match(/\./g) || []).length;
+  if (commaCount > 0 && dotCount === 0) {
+    if (commaCount === 1) {
+      s = s.replace(',', '.'); // likely decimal comma
+    } else {
+      s = s.replace(/,/g, ''); // remove thousand separators
+    }
+  } else {
+    s = s.replace(/,/g, ''); // remove commas when dots present
+  }
+
+  // Remove spaces and apostrophes
+  s = s.replace(/[\s']/g, '');
+
+  return new Decimal(s);
 };
 
 // Export the Decimal class for advanced usage if needed

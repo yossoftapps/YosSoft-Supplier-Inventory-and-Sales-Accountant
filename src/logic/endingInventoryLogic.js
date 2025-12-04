@@ -8,8 +8,10 @@ import {
   subtract,
   add,
   compare,
+  divide,
   Decimal
 } from '../utils/financialCalculations.js';
+// Note: `divide` is available in financialCalculations.js; import when needed
 
 // دالة مساعدة للفرز حسب تاريخ الصلاحية من الاقرب إلى الابعد
 const sortByExpiryAsc = (data) => {

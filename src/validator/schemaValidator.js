@@ -296,11 +296,21 @@ function normalizeDataInternal(data, schema) {
             
           case 'date':
             // Convert to proper date format
-            if (!(value instanceof Date)) {
+            // Handle Excel serial numbers (e.g. 46204) by converting
+            // from Excel epoch to JS Date: (serial - 25569) * 86400 * 1000
+            if (typeof value === 'number') {
+              try {
+                const jsDate = new Date((value - 25569) * 86400 * 1000);
+                value = jsDate;
+              } catch (e) {
+                value = new Date(value);
+              }
+            } else if (!(value instanceof Date)) {
               value = new Date(value);
             }
-            // Format as yyyy-mm-dd
-            if (!isNaN(value)) {
+
+            // Format as yyyy-mm-dd when we have a valid Date
+            if (value instanceof Date && !isNaN(value.getTime())) {
               const year = value.getFullYear();
               const month = String(value.getMonth() + 1).padStart(2, '0');
               const day = String(value.getDate()).padStart(2, '0');
@@ -327,13 +337,31 @@ function normalizeDataInternal(data, schema) {
 export const validateAllTables = (rawData) => {
   console.log('بدء التحقق من صحة جميع الجداول');
   
+  // Normalize possible localized sheet names to canonical keys
+  const nameAliases = {
+    'مشتريات': 'purchases',
+    'مبيعات': 'sales',
+    'المخزون': 'physicalInventory',
+    'الارصدة': 'supplierbalances',
+    'supplierbalances': 'supplierbalances',
+    'physicalInventory': 'physicalInventory',
+    'sales': 'sales',
+    'purchases': 'purchases'
+  };
+
+  const normalizedRaw = {};
+  for (const key of Object.keys(rawData || {})) {
+    const mapped = nameAliases[key] || key;
+    normalizedRaw[mapped] = rawData[key];
+  }
+
   const results = {};
   let allValid = true;
   const allErrors = [];
   
   // Validate each table
   for (const [tableName, schema] of Object.entries(TABLE_SCHEMAS)) {
-    const tableData = rawData[tableName];
+    const tableData = normalizedRaw[tableName] || rawData[tableName];
     const tableResults = {
       isValid: true,
       errors: []

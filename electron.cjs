@@ -2,6 +2,8 @@ const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const XLSX = require('xlsx');
 
+//
+
 // =================================================================
 // دالة مساعدة لتحويل تواريخ Excel (رقمية او نصية) إلى نص بصيغة yyyy-mm-dd
 // =================================================================
@@ -103,12 +105,39 @@ function createWindow() {
   const mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
+    show: false, // إخفاء النافذة حتى اكتمال التحميل
+    backgroundColor: '#ffffff', // لون خلفية لمنع الشاشة السوداء
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(__dirname, 'preload.cjs'),
+      nodeIntegration: false,
+      contextIsolation: true,
+      // تحسينات الأمان والأداء
+      webSecurity: true,
+      sandbox: false, // مطلوب لـ preload script
     },
   });
-  mainWindow.loadURL('http://localhost:3003');
+
+  // استخدام المنفذ الديناميكي من متغير البيئة أو الافتراضي
+  const startUrl = process.env.ELECTRON_START_URL || 'http://localhost:3001';
+  console.log(`تحميل التطبيق من: ${startUrl}`);
+
+  mainWindow.loadURL(startUrl);
+
+  // إظهار النافذة عند اكتمال التحميل
+  mainWindow.webContents.on('did-finish-load', () => {
+    console.log('✅ اكتمل تحميل التطبيق');
+    mainWindow.show();
+    mainWindow.focus();
+  });
+
+  // معالجة أخطاء التحميل
+  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
+    console.error(`❌ فشل تحميل التطبيق: ${errorDescription} (${errorCode})`);
+  });
+
   mainWindow.webContents.openDevTools();
+
+  return mainWindow;
 }
 
 app.whenReady().then(() => {

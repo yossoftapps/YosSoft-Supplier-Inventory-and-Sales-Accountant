@@ -45,15 +45,15 @@ function NetSalesPage({ data }) {
             {/* Print/Export buttons */}
             <PrintExportButtons 
                 data={selectedTab === 'netSales' ? data.netSalesList : data.orphanReturnsList}
-                title={`تقرير صافي المبيعات - ${selectedTab === 'netSales' ? 'قائمة ج: المبيعات الفعلية' : 'قائمة د: المرتجعات اليتيمة'}`}
+                title={`تقرير صافي المبيعات - ${selectedTab === 'netSales' ? 'قائمة C: المبيعات الفعلية' : 'قائمة D: المرتجعات اليتيمة'}`}
                 columns={columns}
                 filename={selectedTab === 'netSales' ? 'net-sales' : 'orphan-returns'}
             />
 
             {/* استخدام Radio.Button لشكل افضل */}
             <Radio.Group value={selectedTab} onChange={(e) => setSelectedTab(e.target.value)} style={{ marginBottom: 16 }}>
-                <Radio.Button value="netSales">قائمة ج: المبيعات الفعلية ({data.netSalesList.length})</Radio.Button>
-                <Radio.Button value="orphanReturns">قائمة د: المرتجعات اليتيمة ({data.orphanReturnsList.length})</Radio.Button>
+                <Radio.Button value="netSales">قائمة C: المبيعات الفعلية ({data.netSalesList.length})</Radio.Button>
+                <Radio.Button value="orphanReturns">قائمة D: المرتجعات اليتيمة ({data.orphanReturnsList.length})</Radio.Button>
             </Radio.Group>
 
             {selectedTab === 'netSales' && (

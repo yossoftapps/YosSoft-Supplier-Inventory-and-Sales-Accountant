@@ -1,8 +1,32 @@
 // دالة مساعدة لتحويل مصفوفة المصفوفات إلى مصفوفة كائنات
-const convertToObjects = (data) => {
-    if (!data || data.length < 2) return [];
-    const headers = data[0];
-    return data.slice(1).map(row => {
+// convertToObjects: convert array-of-rows to array-of-objects
+// Accepts either: (dataWithHeaderRow) OR (dataRows, headers)
+const convertToObjects = (data, headersParam) => {
+    if (!data || data.length === 0) return [];
+
+    let headers = headersParam;
+    let rows = data;
+
+    if (!headers) {
+        const firstRow = data[0];
+        const isHeaderLike = Array.isArray(firstRow) && firstRow.every(cell => typeof cell === 'string');
+        if (isHeaderLike) {
+            headers = firstRow;
+            rows = data.slice(1);
+        } else {
+            return rows.map(row => {
+                const obj = {};
+                if (Array.isArray(row)) {
+                    row.forEach((cell, idx) => { obj[idx] = cell; });
+                } else if (row && typeof row === 'object') {
+                    return row;
+                }
+                return obj;
+            });
+        }
+    }
+
+    return rows.map(row => {
         const obj = {};
         headers.forEach((header, index) => {
             obj[header] = row[index];
@@ -21,15 +45,16 @@ import matchingAudit from '../audit/matchingAudit';
 
 // استيراد ادوات الحسابات المالية الدقة
 import { 
-  roundToInteger, 
-  roundToDecimalPlaces, 
-  formatMoney, 
-  formatQuantity,
-  multiply,
-  subtract,
-  add,
-  compare,
-  Decimal
+    roundToInteger, 
+    roundToDecimalPlaces, 
+    formatMoney, 
+    formatQuantity,
+    multiply,
+    subtract,
+    add,
+    compare,
+    Decimal,
+    parseQuantity
 } from '../utils/financialCalculations.js';
 
 /**
@@ -38,7 +63,7 @@ import {
  * @param {Array} salesReturnsRaw - بيانات المرتجعات الخام (مع العناوين)
  * @returns {Object} { netSalesList, orphanReturnsList }
  */
-export const calculateNetSales = (allSalesRaw, salesReturnsRaw) => {
+export const calculateNetSales = (allSalesRaw, salesReturnsRaw, headers = null) => {
     console.log('--- بدء معالجة صافي المبيعات ---');
     console.log('Input sales raw:', allSalesRaw);
     console.log('Input returns raw:', salesReturnsRaw);
@@ -46,8 +71,8 @@ export const calculateNetSales = (allSalesRaw, salesReturnsRaw) => {
     console.log('Returns raw length:', salesReturnsRaw ? salesReturnsRaw.length : 0);
 
     // 1. تحويل البيانات إلى كائنات
-    const allSales = convertToObjects(allSalesRaw);
-    const salesReturns = convertToObjects(salesReturnsRaw);
+    const allSales = convertToObjects(allSalesRaw, headers || undefined);
+    const salesReturns = convertToObjects(salesReturnsRaw, headers || undefined);
     console.log('Converted sales:', allSales);
     console.log('Converted returns:', salesReturns);
     console.log('Converted sales length:', allSales.length);
@@ -67,13 +92,20 @@ export const calculateNetSales = (allSalesRaw, salesReturnsRaw) => {
     console.log('Sorted sales:', sortedSales);
 
     // 3. إنشاء نسخة عمل من المبيعات باستخدام الحسابات المالية الدقة
-    let netSalesList = sortedSales.map((s, index) => ({
-        ...s,
-        'م': index + 1, // إضافة الرقم التسلسلي مبدئياً
-        'الكمية': roundToDecimalPlaces(s['الكمية'] || 0, 2),
-        'ملاحظات': 'لايوجد مرتجع',
-        'القائمة': 'C'
-    }));
+    // Safely parse quantities and log diagnostics per record
+    let netSalesList = sortedSales.map((s, index) => {
+        const rawQty = s['الكمية'];
+        const parsed = parseQuantity(rawQty);
+        const qty = parsed ? roundToDecimalPlaces(parsed, 2) : roundToDecimalPlaces(0, 2);
+        console.log(`[DIAG][NetSales] record ${index + 1} rawQty=`, rawQty, 'parsed=', parsed ? parsed.toString() : null, 'finalQty=', qty.toString());
+        return {
+            ...s,
+            'م': index + 1, // إضافة الرقم التسلسلي مبدئياً
+            'الكمية': qty,
+            'ملاحظات': 'لايوجد مرتجع',
+            'القائمة': 'C'
+        };
+    });
 
     console.log('Initial net sales list:', netSalesList);
 

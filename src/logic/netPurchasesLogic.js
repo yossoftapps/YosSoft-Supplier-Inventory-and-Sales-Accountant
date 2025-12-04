@@ -1,8 +1,38 @@
 // دالة مساعدة لتحويل مصفوفة المصفوفات إلى مصفوفة كائنات
-const convertToObjects = (data) => {
-    if (!data || data.length < 2) return [];
-    const headers = data[0];
-    return data.slice(1).map(row => {
+// convertToObjects: convert array-of-rows to array-of-objects
+// Accepts either: (dataWithHeaderRow) OR (dataRows, headers)
+const convertToObjects = (data, headersParam) => {
+    if (!data || data.length === 0) return [];
+
+    // If headersParam provided, treat `data` as rows (no header row)
+    let headers = headersParam;
+    let rows = data;
+
+    // If no headersParam, try to detect header row at data[0]
+    if (!headers) {
+        // Heuristic: header row likely contains mostly strings
+        const firstRow = data[0];
+        const isHeaderLike = Array.isArray(firstRow) && firstRow.every(cell => typeof cell === 'string');
+        if (isHeaderLike) {
+            headers = firstRow;
+            rows = data.slice(1);
+        } else {
+            // No headers available and rows present -> cannot map reliably
+            // Return rows as objects with numeric keys
+            return rows.map(row => {
+                const obj = {};
+                if (Array.isArray(row)) {
+                    row.forEach((cell, idx) => { obj[idx] = cell; });
+                } else if (row && typeof row === 'object') {
+                    return row;
+                }
+                return obj;
+            });
+        }
+    }
+
+    // Now map rows to objects using headers
+    return rows.map(row => {
         const obj = {};
         headers.forEach((header, index) => {
             obj[header] = row[index];
@@ -21,15 +51,16 @@ import matchingAudit from '../audit/matchingAudit';
 
 // استيراد ادوات الحسابات المالية الدقة
 import { 
-  roundToInteger, 
-  roundToDecimalPlaces, 
-  formatMoney, 
-  formatQuantity,
-  multiply,
-  subtract,
-  add,
-  compare,
-  Decimal
+    roundToInteger, 
+    roundToDecimalPlaces, 
+    formatMoney, 
+    formatQuantity,
+    multiply,
+    subtract,
+    add,
+    compare,
+    Decimal,
+    parseQuantity
 } from '../utils/financialCalculations.js';
 
 /**
@@ -38,7 +69,7 @@ import {
  * @param {Array} purchaseReturnsRaw - بيانات المرتجعات الخام (مع العناوين)
  * @returns {Object} { netPurchasesList, orphanReturnsList }
  */
-export const calculateNetPurchases = (allPurchasesRaw, purchaseReturnsRaw) => {
+export const calculateNetPurchases = (allPurchasesRaw, purchaseReturnsRaw, headers = null) => {
     console.log('--- بدء معالجة صافي المشتريات ---');
     console.log('Input purchases raw:', allPurchasesRaw);
     console.log('Input returns raw:', purchaseReturnsRaw);
@@ -46,8 +77,9 @@ export const calculateNetPurchases = (allPurchasesRaw, purchaseReturnsRaw) => {
     console.log('Returns raw length:', purchaseReturnsRaw ? purchaseReturnsRaw.length : 0);
 
     // 1. تحويل البيانات إلى كائنات
-    const allPurchases = convertToObjects(allPurchasesRaw);
-    const purchaseReturns = convertToObjects(purchaseReturnsRaw);
+    // If headers provided, use them (caller passes header row). Otherwise convertToObjects will attempt detection.
+    const allPurchases = convertToObjects(allPurchasesRaw, headers || undefined);
+    const purchaseReturns = convertToObjects(purchaseReturnsRaw, headers || undefined);
     console.log('Converted purchases:', allPurchases);
     console.log('Converted returns:', purchaseReturns);
     console.log('Converted purchases length:', allPurchases.length);
@@ -67,15 +99,22 @@ export const calculateNetPurchases = (allPurchasesRaw, purchaseReturnsRaw) => {
     console.log('Sorted purchases:', sortedPurchases);
 
     // 3. إنشاء نسخة عمل من المشتريات باستخدام الحسابات المالية الدقة
-    let netPurchasesList = sortedPurchases.map((p, index) => ({
-        ...p,
-        'م': index + 1, // إضافة الرقم التسلسلي مبدئياً
-        'الكمية': roundToDecimalPlaces(p['الكمية'] || 0, 2),
-        'ملاحظات': 'لايوجد مرتجع',
-        'القائمة': 'A',
-        'كمية الجرد': new Decimal(0), // إضافة عمود كمية الجرد
-        'كمية المبيعات': new Decimal(0) // إضافة عمود كمية المبيعات
-    }));
+    // Safely parse quantities and log diagnostics per record
+    let netPurchasesList = sortedPurchases.map((p, index) => {
+        const rawQty = p['الكمية'];
+        const parsed = parseQuantity(rawQty);
+        const qty = parsed ? roundToDecimalPlaces(parsed, 2) : roundToDecimalPlaces(0, 2);
+        console.log(`[DIAG][NetPurchases] record ${index + 1} rawQty=`, rawQty, 'parsed=', parsed ? parsed.toString() : null, 'finalQty=', qty.toString());
+        return {
+            ...p,
+            'م': index + 1, // إضافة الرقم التسلسلي مبدئياً
+            'الكمية': qty,
+            'ملاحظات': 'لايوجد مرتجع',
+            'القائمة': 'A',
+            'كمية الجرد': new Decimal(0), // إضافة عمود كمية الجرد
+            'كمية المبيعات': new Decimal(0) // إضافة عمود كمية المبيعات
+        };
+    });
 
     console.log('Initial net purchases list:', netPurchasesList);
 

@@ -22,12 +22,14 @@ import {
   roundToDecimalPlaces, 
   formatMoney, 
   formatQuantity,
-  multiply,
-  subtract,
-  add,
-  compare,
-  Decimal
+    multiply,
+    subtract,
+    add,
+    compare,
+    divide,
+    Decimal
 } from '../utils/financialCalculations.js';
+// ensure divide is available
 
 /**
  * حساب تكلفة المبيعات بتطبيق 4 مفاتيح مطابقة حسب الاولوية كما ورد في المواصفات
@@ -172,6 +174,26 @@ export const calculateSalesCost = (netPurchasesResult, netSalesResult) => {
             notes = 'لايوجد مشتريات';
         }
         
+        // حساب افرادي الشراء بأمان
+        let purchaseUnitPrice = new Decimal(0);
+        if (compare(totalCost, 0) > 0 && compare(saleQuantity, 0) > 0) {
+            try {
+                purchaseUnitPrice = roundToInteger(divide(totalCost, saleQuantity));
+            } catch (e) {
+                purchaseUnitPrice = new Decimal(0);
+            }
+        }
+        
+        // حساب افرادي الربح بأمان
+        let profitUnitPrice = saleUnitPrice;
+        if (compare(purchaseUnitPrice, 0) > 0) {
+            try {
+                profitUnitPrice = roundToInteger(subtract(saleUnitPrice, purchaseUnitPrice));
+            } catch (e) {
+                profitUnitPrice = saleUnitPrice;
+            }
+        }
+        
         return {
             'م': index + 1,
             'رمز المادة': sale['رمز المادة'],
@@ -181,11 +203,11 @@ export const calculateSalesCost = (netPurchasesResult, netSalesResult) => {
             'تاريخ الصلاحية': sale['تاريخ الصلاحية'],
             'تاريخ العملية': sale['تاريخ العملية'],
             'الافرادي': formatMoney(saleUnitPrice), // استخدام التنسيق المحدد للمبالغ
-            'افرادي الشراء': compare(totalCost, 0) > 0 ? formatMoney(divide(totalCost, saleQuantity)) : '0',
+            'افرادي الشراء': formatMoney(purchaseUnitPrice),
             'تاريخ الشراء': purchaseDetails.length > 0 ? purchaseDetails[0].purchaseDate : '',
             'المورد': purchaseDetails.length > 0 ? purchaseDetails[0].purchaseBatch : '',
             'رقم السجل': sale['رقم السجل'],
-            'افرادي الربح': formatMoney(subtract(saleUnitPrice, divide(totalCost, saleQuantity) || 0)),
+            'افرادي الربح': formatMoney(profitUnitPrice),
             'نسبة الربح': roundToInteger(profitMargin).toString() + '%',
             'اجمالي الربح': formatMoney(totalProfit),
             'عمر العملية': inventoryAge.toString(),
@@ -196,6 +218,9 @@ export const calculateSalesCost = (netPurchasesResult, netSalesResult) => {
     
     console.log('--- انتهت عملية حساب تكلفة المبيعات ---');
     console.log('عدد عمليات البيع مع التكلفة:', salesWithCost.length, 'عملية');
-    
-    return salesWithCost;
+
+    // Return an object to be consistent with other logic result shapes
+    return {
+        costOfSalesList: salesWithCost
+    };
 };

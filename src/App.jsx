@@ -209,6 +209,21 @@ function App() {
     // Normalize incoming processed data to the Arabic keys used in the UI
     try {
       const normalized = normalizeProcessedData(data);
+      // Diagnostic logs: print first record of each list if exists
+      if (normalized) {
+        if (normalized.netPurchasesList && normalized.netPurchasesList.length > 0) {
+          console.log('[DIAG] netPurchasesList sample:', normalized.netPurchasesList[0]);
+        }
+        if (normalized.orphanReturnsList && normalized.orphanReturnsList.length > 0) {
+          console.log('[DIAG] orphanReturnsList sample:', normalized.orphanReturnsList[0]);
+        }
+        if (normalized.netSalesList && normalized.netSalesList.length > 0) {
+          console.log('[DIAG] netSalesList sample:', normalized.netSalesList[0]);
+        }
+        if (normalized.physicalInventoryList && normalized.physicalInventoryList.length > 0) {
+          console.log('[DIAG] physicalInventoryList sample:', normalized.physicalInventoryList[0]);
+        }
+      }
       setProcessedData(normalized);
     } catch (err) {
       console.error('Data normalization failed:', err);

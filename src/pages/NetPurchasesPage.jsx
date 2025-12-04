@@ -10,6 +10,17 @@ function NetPurchasesPage({ data }) {
     const { t } = useTranslation();
     const [selectedTab, setSelectedTab] = useState('netPurchases');
 
+    // Diagnostic logs: print lengths and first records
+    if (data) {
+        console.log('[DIAG] NetPurchasesPage data.netPurchasesList.length:', data.netPurchasesList && data.netPurchasesList.length);
+        if (data.netPurchasesList && data.netPurchasesList.length > 0) {
+            console.log('[DIAG] NetPurchasesPage netPurchasesList sample:', data.netPurchasesList[0]);
+        }
+        console.log('[DIAG] NetPurchasesPage data.orphanReturnsList.length:', data.orphanReturnsList && data.orphanReturnsList.length);
+        if (data.orphanReturnsList && data.orphanReturnsList.length > 0) {
+            console.log('[DIAG] NetPurchasesPage orphanReturnsList sample:', data.orphanReturnsList[0]);
+        }
+    }
     if (!data) {
         return (
             <div style={{ padding: '20px' }}>
@@ -53,19 +64,19 @@ function NetPurchasesPage({ data }) {
             {/* Print/Export buttons */}
             <PrintExportButtons 
                 data={selectedTab === 'netPurchases' ? data.netPurchasesList : data.orphanReturnsList}
-                title={`${t('netPurchases')} - ${selectedTab === 'netPurchases' ? 'قائمة ا: المشتريات الفعلية' : 'قائمة ب: المرتجعات اليتيمة'}`}
+                title={`${t('netPurchases')} - ${selectedTab === 'netPurchases' ? 'قائمة A: المشتريات الفعلية' : 'قائمة B: المرتجعات اليتيمة'}`}
                 columns={columns}
                 filename={selectedTab === 'netPurchases' ? 'net-purchases' : 'orphan-returns'}
             />
 
             <Radio.Group value={selectedTab} onChange={(e) => setSelectedTab(e.target.value)} style={{ marginBottom: 16 }}>
-                <Radio.Button value="netPurchases">قائمة ا: المشتريات الفعلية ({data.netPurchasesList.length})</Radio.Button>
-                <Radio.Button value="orphanReturns">قائمة ب: المرتجعات اليتيمة ({data.orphanReturnsList.length})</Radio.Button>
+                <Radio.Button value="netPurchases">قائمة A: المشتريات الفعلية ({data.netPurchasesList.length})</Radio.Button>
+                <Radio.Button value="orphanReturns">قائمة B: المرتجعات اليتيمة ({data.orphanReturnsList.length})</Radio.Button>
             </Radio.Group>
 
             {selectedTab === 'netPurchases' && (
                 <Table
-                    title={() => <strong>قائمة ا: المشتريات الفعلية ({data.netPurchasesList.length} {t('records')})</strong>}
+                    title={() => <strong>قائمة A: المشتريات الفعلية ({data.netPurchasesList.length} {t('records')})</strong>}
                     dataSource={data.netPurchasesList}
                     columns={columns}
                     rowKey="م"
@@ -117,7 +128,7 @@ function NetPurchasesPage({ data }) {
             )}
             {selectedTab === 'orphanReturns' && (
                 <Table
-                    title={() => <strong>قائمة ب: المرتجعات اليتيمة ({data.orphanReturnsList.length} {t('records')})</strong>}
+                    title={() => <strong>قائمة B: المرتجعات اليتيمة ({data.orphanReturnsList.length} {t('records')})</strong>}
                     dataSource={data.orphanReturnsList}
                     columns={columns} // يمكن استخدام نفس الاعمدة، ستكون الحقول الإضافية فارغة
                     rowKey="م"

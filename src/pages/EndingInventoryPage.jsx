@@ -56,14 +56,14 @@ function EndingInventoryPage({ data }) {
             {/* Print/Export buttons */}
             <PrintExportButtons 
                 data={selectedTab === 'endingInventory' ? data.endingInventoryList : data.listB}
-                title={`تقرير المخزون النهائي - ${selectedTab === 'endingInventory' ? 'المخزون النهائي' : 'قائمة ب: مرتجع المشتريات اليتيمة'}`}
+                title={`تقرير المخزون النهائي - ${selectedTab === 'endingInventory' ? 'المخزون النهائي' : 'قائمة B: مرتجع المشتريات اليتيمة'}`}
                 columns={columns}
                 filename={selectedTab === 'endingInventory' ? 'ending-inventory' : 'orphan-purchase-returns'}
             />
 
             <Radio.Group value={selectedTab} onChange={(e) => setSelectedTab(e.target.value)} style={{ marginBottom: 16 }}>
                 <Radio.Button value="endingInventory">المخزون النهائي ({data.endingInventoryList.length})</Radio.Button>
-                <Radio.Button value="listB">قائمة ب: مرتجع المشتريات اليتيمة ({data.listB.length})</Radio.Button>
+                <Radio.Button value="listB">قائمة B: مرتجع المشتريات اليتيمة ({data.listB.length})</Radio.Button>
             </Radio.Group>
 
             {selectedTab === 'endingInventory' && (
@@ -78,7 +78,7 @@ function EndingInventoryPage({ data }) {
             )}
             {selectedTab === 'listB' && (
                 <Table
-                    title={() => <strong>قائمة ب: مرتجع المشتريات اليتيمة ({data.listB.length} سجل)</strong>}
+                    title={() => <strong>قائمة B: مرتجع المشتريات اليتيمة ({data.listB.length} سجل)</strong>}
                     dataSource={data.listB}
                     columns={columns} // يمكن استخدام نفس الاعمدة مع إخفاء بعضها إذا لزم الامر
                     rowKey="م"

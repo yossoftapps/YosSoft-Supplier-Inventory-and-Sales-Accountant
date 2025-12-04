@@ -18,7 +18,22 @@ const convertToObjects = (data) => {
     return data.slice(1).map(row => {
         const obj = {};
         headers.forEach((header, index) => {
-            obj[header] = row[index];
+            let cell = row[index];
+            // If this is an Excel serial date for expiry, convert to ISO date string
+            if (header === 'تاريخ الصلاحية' && typeof cell === 'number') {
+                // Excel serial to JS date: (serial - 25569) * 86400 * 1000
+                try {
+                    const jsDate = new Date((cell - 25569) * 86400 * 1000);
+                    // Normalize to yyyy-mm-dd
+                    const y = jsDate.getFullYear();
+                    const m = String(jsDate.getMonth() + 1).padStart(2, '0');
+                    const d = String(jsDate.getDate()).padStart(2, '0');
+                    cell = `${y}-${m}-${d}`;
+                } catch (e) {
+                    // fallback: leave as-is
+                }
+            }
+            obj[header] = cell;
         });
         return obj;
     });
