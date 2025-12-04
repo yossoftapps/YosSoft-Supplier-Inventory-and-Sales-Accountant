@@ -47,7 +47,7 @@ const sortByDateDesc = (data, dateKey) => {
 };
 
 // استيراد اداة تتبع المطابقات
-import matchingAudit from '../audit/matchingAudit';
+import matchingAudit from '../audit/matchingAudit.js';
 
 // استيراد ادوات الحسابات المالية الدقة
 import { 
