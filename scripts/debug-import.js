@@ -31,13 +31,32 @@ async function main() {
     const workbook = XLSX.readFile(samplePath);
     printSheetInfo(workbook);
 
-    // Basic checks: expected sheets
-    const expected = ['purchases', 'sales', 'physicalInventory', 'supplierbalances'];
-    const missing = expected.filter(s => !workbook.SheetNames.includes(s));
+    // Basic checks: expected sheets (accept Arabic and English aliases)
+    const aliases = {
+      purchases: ['purchases', 'مشتريات'],
+      sales: ['sales', 'مبيعات'],
+      physicalInventory: ['physicalInventory', 'المخزون'],
+      supplierbalances: ['supplierbalances', 'الارصدة']
+    };
+
+    const found = {};
+    const missing = [];
+
+    for (const key of Object.keys(aliases)) {
+      const possible = aliases[key];
+      const match = possible.find(name => workbook.SheetNames.includes(name));
+      if (match) {
+        found[key] = match;
+      } else {
+        missing.push(key);
+      }
+    }
+
     if (missing.length) {
-      console.warn('Warning: expected sheets missing:', missing.join(', '));
+      console.warn('Warning: some expected logical sheets were not found (by any alias):', missing.join(', '));
+      console.log('Available sheets:', workbook.SheetNames.join(', '));
     } else {
-      console.log('All expected sheets present.');
+      console.log('All expected logical sheets found. Mappings:', JSON.stringify(found));
     }
   } catch (err) {
     console.error('Error reading sample file:', err);
