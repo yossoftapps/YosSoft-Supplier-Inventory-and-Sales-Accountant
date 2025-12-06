@@ -1,4 +1,20 @@
-// دالة مساعدة لتحويل مصفوفة المصفوفات إلى مصفوفة كائنات
+// ═══════════════════════════════════════════════════════════════════════════
+// الجرد الدفتري - محسّن للأداء
+// Book Inventory - Performance Optimized
+// ═══════════════════════════════════════════════════════════════════════════
+
+import {
+    roundToInteger,
+    roundToDecimalPlaces,
+    formatMoney,
+    formatQuantity,
+    multiply,
+    subtract,
+    add,
+    compare,
+    Decimal
+} from '../utils/financialCalculations.js';
+
 const convertToObjects = (data) => {
     if (!data || data.length < 2) return [];
     const headers = data[0];
@@ -11,168 +27,180 @@ const convertToObjects = (data) => {
     });
 };
 
-// دالة مساعدة للفرز حسب التاريخ
 const sortByDateDesc = (data, dateKey) => {
     return data.sort((a, b) => new Date(b[dateKey]) - new Date(a[dateKey]));
 };
 
-// استيراد ادوات الحسابات المالية الدقة
-import { 
-  roundToInteger, 
-  roundToDecimalPlaces, 
-  formatMoney, 
-  formatQuantity,
-  multiply,
-  subtract,
-  add,
-  compare,
-  Decimal
-} from '../utils/financialCalculations.js';
-
 /**
- * حساب الجرد الدفتري بتطبيق 4 مفاتيح مطابقة حسب الاولوية كما ورد في المواصفات
- * @param {Array} netPurchasesRaw - بيانات صافي المشتريات (قائمة A + قائمة B)
- * @param {Array} netSalesRaw - بيانات صافي المبيعات (قائمة C + قائمة D)
- * @returns {Array} bookInventoryList - قائمة الجرد الدفتري
+ * حساب الجرد الدفتري بتطبيق 4 مفاتيح مطابقة
+ * تم التحسين باستخدام الفهارس (Map) لتسريع عملية البحث
  */
 export const calculateBookInventory = (netPurchasesList, netSalesList) => {
-    console.log('--- بدء معالجة الجرد الدفتري ---');
+    const startTime = performance.now();
 
-    // 1. تحويل البيانات إلى كائنات (إذا كانت البيانات خام)
-    // التحقق مما إذا كانت البيانات خام (مصفوفة مصفوفات) او كائنات بالفعل
-    const netPurchases = Array.isArray(netPurchasesList) && netPurchasesList.length > 0 && Array.isArray(netPurchasesList[0]) 
+    const netPurchases = Array.isArray(netPurchasesList) && netPurchasesList.length > 0 && Array.isArray(netPurchasesList[0])
         ? convertToObjects(netPurchasesList)
         : netPurchasesList;
-        
-    const netSales = Array.isArray(netSalesList) && netSalesList.length > 0 && Array.isArray(netSalesList[0]) 
+
+    const netSales = Array.isArray(netSalesList) && netSalesList.length > 0 && Array.isArray(netSalesList[0])
         ? convertToObjects(netSalesList)
         : netSalesList;
 
-    // 2. فرز البيانات من الاحدث إلى الاقدم
-    const sortedPurchases = sortByDateDesc([...netPurchases], 'تاريخ العملية');
-    const sortedSales = sortByDateDesc([...netSales], 'تاريخ العملية');
+    console.log(`🚀 [BookInventory] معالجة: ${netPurchases.length} مشتريات، ${netSales.length} مبيعات`);
 
-    // 3. إنشاء نسخة عمل من المشتريات والمبيعات
+    // 1. فهرسة المشتريات حسب رمز المادة وترتيبها تنازلياً بالتاريخ
+    const purchasesByItem = new Map();
+    netPurchases.forEach(p => {
+        // إنشاء نسخة لتجنب تعديل البيانات الأصلية إذا لم يكن مطلوباً (أو استخدامها مباشرة إذا كان مطلوب التعديل التراكمي)
+        // هنا نستخدم النسخة لأننا سنعدل الكميات أثناء الحساب
+        const item = { ...p, _dateObj: new Date(p['تاريخ العملية']) };
+        const code = item['رمز المادة'];
+        if (!purchasesByItem.has(code)) {
+            purchasesByItem.set(code, []);
+        }
+        purchasesByItem.get(code).push(item);
+    });
+
+    // فرز كل قائمة مشتريات مرة واحدة فقط
+    purchasesByItem.forEach(list => {
+        list.sort((a, b) => {
+            const dateDiff = b._dateObj - a._dateObj;
+            if (dateDiff !== 0) return dateDiff;
+            return a['م'] - b['م'];
+        });
+    });
+
+    const sortedSales = sortByDateDesc([...netSales], 'تاريخ العملية');
     let bookInventoryList = [];
 
-    // 4. تعريف المفاتيح الاربعة حسب الاولوية للجرد الدفتري كما ورد في المواصفات
-    // الشرط الاساسي للمطابقة تاريخ صافي المبيعات اكبر او يساوي تاريخ صافي المشتريات
-    // المفتاح 1:- (رمز المادة، تاريخ الصلاحية) + تاريخ صافي المبيعات اكبر او يساوي تاريخ صافي المشتريات
-    // المفتاح 2:- (رمز المادة) + تاريخ صافي المبيعات اكبر او يساوي تاريخ صافي المشتريات
-    // المفتاح 3:- (رمز المادة) + تاريخ صافي المبيعات اصغر من تاريخ صافي المشتريات بثلاثة ايام كحد اقصى
-    // المفتاح 4:- (رمز المادة) بدون شرط التاريخ
+    // تعريف دوال المطابقة
+    const strategies = [
+        // 1. التاريخ صالح، نفس المادة، نفس الصلاحية
+        (p, s, pDate, sDate) => sDate >= pDate && p['تاريخ الصلاحية'] === s['تاريخ الصلاحية'],
 
-    const getMatchingKeys = (saleRecord) => [
-        // المفتاح 1:- (رمز المادة، تاريخ الصلاحية) + تاريخ صافي المبيعات اكبر او يساوي تاريخ صافي المشتريات
-        (p) => new Date(saleRecord['تاريخ العملية']) >= new Date(p['تاريخ العملية']) &&
-            p['رمز المادة'] === saleRecord['رمز المادة'] &&
-            p['تاريخ الصلاحية'] === saleRecord['تاريخ الصلاحية'],
+        // 2. التاريخ صالح، نفس المادة
+        (p, s, pDate, sDate) => sDate >= pDate,
 
-        // المفتاح 2:- (رمز المادة) + تاريخ صافي المبيعات اكبر او يساوي تاريخ صافي المشتريات
-        (p) => new Date(saleRecord['تاريخ العملية']) >= new Date(p['تاريخ العملية']) &&
-            p['رمز المادة'] === saleRecord['رمز المادة'],
+        // 3. شراء مستقبلي (خلال 3 أيام)، نفس المادة
+        (p, s, pDate, sDate) => pDate > sDate && (pDate - sDate) <= 3 * 24 * 60 * 60 * 1000,
 
-        // المفتاح 3:- (رمز المادة) + تاريخ صافي المبيعات اصغر من تاريخ صافي المشتريات بثلاثة ايام كحد اقصى
-        (p) => new Date(saleRecord['تاريخ العملية']) < new Date(p['تاريخ العملية']) &&
-            new Date(p['تاريخ العملية']) - new Date(saleRecord['تاريخ العملية']) <= 3 * 24 * 60 * 60 * 1000 &&
-            p['رمز المادة'] === saleRecord['رمز المادة'],
-
-        // المفتاح 4:- (رمز المادة) بدون شرط التاريخ
-        (p) => p['رمز المادة'] === saleRecord['رمز المادة'],
+        // 4. نفس المادة فقط
+        (p, s, pDate, sDate) => true
     ];
 
-    // 5. المرور على كل سجل مبيعات ومحاولة مطابقته مع المشتريات
-    for (const saleRecord of sortedSales) {
+    for (let saleIdx = 0; saleIdx < sortedSales.length; saleIdx++) {
+        const saleRecord = sortedSales[saleIdx];
+        const saleDate = new Date(saleRecord['تاريخ العملية']);
+
+        let remainingSaleQty = roundToDecimalPlaces(saleRecord['الكمية'] || 0, 2);
         let matched = false;
-        let usedKeyNumber = -1;
 
-        const matchingKeys = getMatchingKeys(saleRecord);
+        // الحصول على قائمة المشتريات المرشحة (نفس المادة)
+        const candidates = purchasesByItem.get(saleRecord['رمز المادة']);
 
-        // جرب كل مفتاح بالترتيب
-        for (let keyIndex = 0; keyIndex < matchingKeys.length; keyIndex++) {
-            const keyFunction = matchingKeys[keyIndex];
+        if (candidates) {
+            // تجربة الاستراتيجيات بالترتيب
+            for (let strategyIdx = 0; strategyIdx < strategies.length; strategyIdx++) {
+                const strategyFn = strategies[strategyIdx];
+                let currentStrategyMatched = false;
 
-            // البحث عن جميع السجلات المطابقة مع هذا المفتاح
-            let matchingPurchases = sortedPurchases.filter(
-                p => compare(p['الكمية'], 0) > 0 && keyFunction(p)
-            );
+                // المرور على المشتريات المرشحة
+                for (let i = 0; i < candidates.length; i++) {
+                    const purchaseRecord = candidates[i];
 
-            // ترتيب السجلات المطابقة: الاحدث ثم الاقدم
-            matchingPurchases.sort((a, b) => {
-                const dateDiff = new Date(b['تاريخ العملية']) - new Date(a['تاريخ العملية']);
-                if (dateDiff !== 0) return dateDiff;
-                // إذا كانت التواريخ متساوية، نرتب حسب معرف السجل
-                return a['م'] - b['م'];
-            });
+                    // تجاوز المشتريات المستهلكة
+                    if (compare(purchaseRecord['الكمية'], 0) <= 0) continue;
 
-            // ⭐ الحلقة الداخلية: استنزال من كل السجلات المطابقة بنفس المفتاح وفقاً للترتيب
-            for (const purchaseRecord of matchingPurchases) {
-                const purchaseIndex = sortedPurchases.findIndex(p => p['م'] === purchaseRecord['م']);
-                if (purchaseIndex === -1) continue;
+                    // التحقق من الاستراتيجية
+                    if (strategyFn(purchaseRecord, saleRecord, purchaseRecord._dateObj, saleDate)) {
 
-                const purchaseQty = sortedPurchases[purchaseIndex]['الكمية'];
-                const saleQty = roundToDecimalPlaces(saleRecord['الكمية'] || 0, 2);
+                        const purchaseQty = purchaseRecord['الكمية'];
 
-                if (compare(purchaseQty, saleQty) >= 0) {
-                    // التطابق كامل: خصم كمية المبيعات بالكامل باستخدام الحسابات المالية الدقة
-                    sortedPurchases[purchaseIndex]['الكمية'] = subtract(sortedPurchases[purchaseIndex]['الكمية'], saleQty);
-                    sortedPurchases[purchaseIndex]['ملاحظات'] = `مطابق (مفتاح ${keyIndex + 1})`;
-                    matched = true;
-                    usedKeyNumber = keyIndex + 1;
+                        if (compare(purchaseQty, remainingSaleQty) >= 0) {
+                            // الشراء يغطي البيع بالكامل
+                            purchaseRecord['الكمية'] = subtract(purchaseQty, remainingSaleQty);
+                            purchaseRecord['ملاحظات'] = `مطابق (مفتاح ${strategyIdx + 1})`;
 
-                    // إضافة السجل إلى الجرد الدفتري
-                    bookInventoryList.push({
-                        ...sortedPurchases[purchaseIndex],
-                        'كمية المبيعات': saleQty,
-                        'ملاحظات': `مطابق (مفتاح ${keyIndex + 1})`,
-                    });
+                            bookInventoryList.push({
+                                ...purchaseRecord,
+                                'كمية المبيعات': remainingSaleQty,
+                                'ملاحظات': `مطابق (مفتاح ${strategyIdx + 1})`,
+                            });
 
-                    break; // الانتهاء من هذا المفتاح
-                } else {
-                    // تطابق جزئي: خصم كمية المشتريات بالكامل واستمر باستخدام الحسابات المالية الدقة
-                    sortedPurchases[purchaseIndex]['الكمية'] = new Decimal(0);
-                    sortedPurchases[purchaseIndex]['ملاحظات'] = `مطابق جزئي (مفتاح ${keyIndex + 1})`;
-                    matched = true;
-                    usedKeyNumber = keyIndex + 1;
+                            remainingSaleQty = new Decimal(0);
+                            currentStrategyMatched = true;
+                            matched = true;
+                            // تم تلبية الطلب بالكامل
+                            break;
+                        } else {
+                            // الشراء يغطي جزء من البيع
+                            purchaseRecord['الكمية'] = new Decimal(0);
+                            purchaseRecord['ملاحظات'] = `مطابق جزئي (مفتاح ${strategyIdx + 1})`;
 
-                    // إضافة السجل إلى الجرد الدفتري
-                    bookInventoryList.push({
-                        ...sortedPurchases[purchaseIndex],
-                        'كمية المبيعات': purchaseQty,
-                        'ملاحظات': `مطابق جزئي (مفتاح ${keyIndex + 1})`,
-                    });
+                            bookInventoryList.push({
+                                ...purchaseRecord,
+                                'كمية المبيعات': purchaseQty,
+                                'ملاحظات': `مطابق جزئي (مفتاح ${strategyIdx + 1})`,
+                            });
 
-                    // تحديث كمية المبيعات المتبقية باستخدام الحسابات المالية الدقة
-                    saleRecord['الكمية'] = subtract(saleQty, purchaseQty);
+                            remainingSaleQty = subtract(remainingSaleQty, purchaseQty);
+                            currentStrategyMatched = true;
+                            matched = true;
+                            // نستمر في البحث عن مشتريات أخرى بنفس الاستراتيجية
+                        }
+                    }
                 }
-            }
 
-            if (matched) break;
+                // إذا حدثت أي مطابقة بهذه الاستراتيجية (كلية أو جزئية)، نتوقف ولا ننتقل للاستراتيجية التالية
+                // هذا يحاكي سلوك الكود الأصلي: "if (matched) break;"
+                if (currentStrategyMatched) break;
+            }
         }
 
-        // إذا لم يتم العثور على مطابقة، اضف السجل مع ملاحظة "لايوجد مشتريات"
-        if (!matched) {
-            bookInventoryList.push({
-                ...saleRecord,
-                'ملاحظات': 'لايوجد مشتريات',
-            });
+        // إذا لم يتم العثور على أي مطابقة، أو بقي جزء غير مطابق
+        if (!matched || compare(remainingSaleQty, 0) > 0) {
+            // إضافة المتبقي كبند غير مطابق
+            // ملاحظة: الكود الأصلي يضيف السجل الأصلي إذا لم يطابق شيء.
+            // هنا نضيف المتبقي
+            if (!matched) {
+                bookInventoryList.push({
+                    ...saleRecord,
+                    'ملاحظات': 'لايوجد مشتريات',
+                });
+            } else {
+                // إذا كان مطابق جزئي وبقي كمية، هل نضيفها؟ 
+                // الكود الأصلي يعدل saleRecord['الكمية'] في الحلقة.
+                // إذا خرج من الحلقة وكان matched=true، لا يضيف السجل "لا يوجد مشتريات".
+                // لذا نتجاهل المتبقي كما في الكود الأصلي (أو نظرياً يبقى معلقاً)
+            }
+        }
+
+        // تقرير تقدم كل 10%
+        const progressInterval = Math.max(1, Math.floor(sortedSales.length * 0.1));
+        if ((saleIdx + 1) % progressInterval === 0 || saleIdx === sortedSales.length - 1) {
+            const percentage = ((saleIdx + 1) / sortedSales.length * 100).toFixed(0);
+            console.log(`⏳ [BookInventory] ${saleIdx + 1}/${sortedSales.length} (${percentage}%)`);
         }
     }
 
-    // 6. إضافة الرقم التسلسلي
+    // ترقيم وتنسيق النتائج النهائية
     bookInventoryList.forEach((item, index) => {
         item['م'] = index + 1;
+        // تنظيف الخاصية المؤقتة
+        delete item._dateObj;
     });
 
-    // 7. فرز القوائم النهائية
+    // الفرز النهائي للتقرير
     bookInventoryList.sort((a, b) => {
         const dateCompare = new Date(b['تاريخ العملية']) - new Date(a['تاريخ العملية']);
         if (dateCompare !== 0) return dateCompare;
         return new Date(a['تاريخ الصلاحية']) - new Date(b['تاريخ الصلاحية']);
     });
 
-    console.log('--- انتهت معالجة الجرد الدفتري ---');
-    console.log('الجرد الدفتري:', bookInventoryList.length, 'سجل');
+    const totalTime = performance.now() - startTime;
+    console.log(`✅ [BookInventory] مكتمل:`);
+    console.log(`   ⏱️  ${totalTime.toFixed(0)}ms`);
+    console.log(`   📊 ${bookInventoryList.length} سجل`);
 
     return bookInventoryList;
 };

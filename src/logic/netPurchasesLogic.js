@@ -1,24 +1,20 @@
-// دالة مساعدة لتحويل مصفوفة المصفوفات إلى مصفوفة كائنات
-// convertToObjects: convert array-of-rows to array-of-objects
-// Accepts either: (dataWithHeaderRow) OR (dataRows, headers)
+// ═══════════════════════════════════════════════════════════════════════════
+// صافي المشتريات - محسّن للأداء
+// Net Purchases - Performance Optimized
+// ═══════════════════════════════════════════════════════════════════════════
+
 const convertToObjects = (data, headersParam) => {
     if (!data || data.length === 0) return [];
-
-    // If headersParam provided, treat `data` as rows (no header row)
     let headers = headersParam;
     let rows = data;
 
-    // If no headersParam, try to detect header row at data[0]
     if (!headers) {
-        // Heuristic: header row likely contains mostly strings
         const firstRow = data[0];
         const isHeaderLike = Array.isArray(firstRow) && firstRow.every(cell => typeof cell === 'string');
         if (isHeaderLike) {
             headers = firstRow;
             rows = data.slice(1);
         } else {
-            // No headers available and rows present -> cannot map reliably
-            // Return rows as objects with numeric keys
             return rows.map(row => {
                 const obj = {};
                 if (Array.isArray(row)) {
@@ -31,299 +27,202 @@ const convertToObjects = (data, headersParam) => {
         }
     }
 
-    // Now map rows to objects using headers
     return rows.map(row => {
         const obj = {};
-        headers.forEach((header, index) => {
-            obj[header] = row[index];
-        });
+        headers.forEach((header, index) => { obj[header] = row[index]; });
         return obj;
     });
 };
 
-// دالة مساعدة للفرز حسب التاريخ
 const sortByDateDesc = (data, dateKey) => {
     return data.sort((a, b) => new Date(b[dateKey]) - new Date(a[dateKey]));
 };
 
-// استيراد اداة تتبع المطابقات
 import matchingAudit from '../audit/matchingAudit.js';
-
-// استيراد ادوات الحسابات المالية الدقة
-import { 
-    roundToInteger, 
-    roundToDecimalPlaces, 
-    formatMoney, 
-    formatQuantity,
-    multiply,
-    subtract,
-    add,
-    compare,
-    Decimal,
-    parseQuantity
+import {
+    roundToInteger, roundToDecimalPlaces, multiply, subtract, add, compare, Decimal, parseQuantity
 } from '../utils/financialCalculations.js';
 
 /**
- * حساب صافي المشتريات بتطبيق 8 مفاتيح مطابقة حسب الاولوية كما ورد في المواصفات
- * @param {Array} allPurchasesRaw - بيانات المشتريات الخام (مع العناوين)
- * @param {Array} purchaseReturnsRaw - بيانات المرتجعات الخام (مع العناوين)
- * @returns {Object} { netPurchasesList, orphanReturnsList }
+ * بناء فهارس سريعة للمشتريات - O(n)
+ * يقوم بتخزين الكائنات مع الفرز المسبق لتجنب الفرز داخل الحلقات التكرارية
+ */
+const buildPurchaseIndexes = (purchases) => {
+    const indexes = {
+        byMaterialCode: new Map(),
+        byMaterialAndSupplier: new Map(),
+        byMaterialAndExpiry: new Map()
+    };
+
+    const addFn = (map, key, item) => {
+        if (!map.has(key)) map.set(key, []);
+        map.get(key).push(item);
+    };
+
+    purchases.forEach((p, idx) => {
+        // Cache date for faster sorting
+        const item = {
+            record: p,
+            index: idx,
+            _date: new Date(p['تاريخ العملية'])
+        };
+
+        const matCode = p['رمز المادة'];
+        const supplier = p['المورد'];
+        const expiry = p['تاريخ الصلاحية'];
+
+        addFn(indexes.byMaterialCode, matCode, item);
+        addFn(indexes.byMaterialAndSupplier, `${matCode}|${supplier}`, item);
+        addFn(indexes.byMaterialAndExpiry, `${matCode}|${expiry}`, item);
+    });
+
+    // Sort all lists once (Descending by Date)
+    const sortFn = (list) => list.sort((a, b) => (b._date - a._date) || (a.index - b.index));
+
+    indexes.byMaterialCode.forEach(sortFn);
+    indexes.byMaterialAndSupplier.forEach(sortFn);
+    indexes.byMaterialAndExpiry.forEach(sortFn);
+
+    return indexes;
+};
+
+/**
+ * حساب صافي المشتريات
  */
 export const calculateNetPurchases = (allPurchasesRaw, purchaseReturnsRaw, headers = null) => {
-    console.log('--- بدء معالجة صافي المشتريات ---');
-    console.log('Input purchases raw:', allPurchasesRaw);
-    console.log('Input returns raw:', purchaseReturnsRaw);
-    console.log('Purchases raw length:', allPurchasesRaw ? allPurchasesRaw.length : 0);
-    console.log('Returns raw length:', purchaseReturnsRaw ? purchaseReturnsRaw.length : 0);
+    const startTime = performance.now();
+    console.log(`🚀 [NetPurchases] معالجة: ${allPurchasesRaw?.length || 0} مشتريات، ${purchaseReturnsRaw?.length || 0} مرتجعات`);
 
-    // 1. تحويل البيانات إلى كائنات
-    // If headers provided, use them (caller passes header row). Otherwise convertToObjects will attempt detection.
-    const allPurchases = convertToObjects(allPurchasesRaw, headers || undefined);
-    const purchaseReturns = convertToObjects(purchaseReturnsRaw, headers || undefined);
-    console.log('Converted purchases:', allPurchases);
-    console.log('Converted returns:', purchaseReturns);
-    console.log('Converted purchases length:', allPurchases.length);
-    console.log('Converted returns length:', purchaseReturns.length);
+    const allPurchases = convertToObjects(allPurchasesRaw, headers);
+    const purchaseReturns = convertToObjects(purchaseReturnsRaw, headers);
 
-    // Early return if no data
     if (allPurchases.length === 0 && purchaseReturns.length === 0) {
-        console.log('No purchase data found, returning empty results');
-        return {
-            netPurchasesList: [],
-            orphanReturnsList: []
-        };
+        return { netPurchasesList: [], orphanReturnsList: [] };
     }
 
-    // 2. فرز المشتريات من الاحدث إلى الاقدم
     const sortedPurchases = sortByDateDesc([...allPurchases], 'تاريخ العملية');
-    console.log('Sorted purchases:', sortedPurchases);
 
-    // 3. إنشاء نسخة عمل من المشتريات باستخدام الحسابات المالية الدقة
-    // Safely parse quantities and log diagnostics per record
     let netPurchasesList = sortedPurchases.map((p, index) => {
         const rawQty = p['الكمية'];
         const parsed = parseQuantity(rawQty);
         const qty = parsed ? roundToDecimalPlaces(parsed, 2) : roundToDecimalPlaces(0, 2);
-        console.log(`[DIAG][NetPurchases] record ${index + 1} rawQty=`, rawQty, 'parsed=', parsed ? parsed.toString() : null, 'finalQty=', qty.toString());
         return {
             ...p,
-            'م': index + 1, // إضافة الرقم التسلسلي مبدئياً
+            'م': index + 1,
             'الكمية': qty,
             'ملاحظات': 'لايوجد مرتجع',
             'القائمة': 'A',
-            'كمية الجرد': new Decimal(0), // إضافة عمود كمية الجرد
-            'كمية المبيعات': new Decimal(0) // إضافة عمود كمية المبيعات
+            'كمية الجرد': new Decimal(0),
+            'كمية المبيعات': new Decimal(0)
         };
     });
 
-    console.log('Initial net purchases list:', netPurchasesList);
-
     const orphanReturnsList = [];
 
-    // 4. تعريف المفاتيح الثمانية حسب الاولوية للمشتريات كما ورد في المواصفات
-    // المفتاح 1: (رمز المادة، الكمية، اسم المورد، تاريخ الصلاحية، الافرادي)
-    // المفتاح 2: (رمز المادة، اسم المورد، تاريخ الصلاحية، الافرادي بعد التقريب لاقرب رقم عشري للمشتريات والمرتجع) + تاريخ المرتجع اكبر او يساوي تاريخ الشراء
-    // المفتاح 3: (رمز المادة، اسم المورد، تاريخ الصلاحية) + تاريخ المرتجع اكبر او يساوي تاريخ الشراء
-    // المفتاح 4: (رمز المادة، تاريخ الصلاحية، الافرادي) + تاريخ المرتجع اكبر او يساوي تاريخ الشراء
-    // المفتاح 5: (رمز المادة، تاريخ الصلاحية) + تاريخ المرتجع اكبر او يساوي تاريخ الشراء
-    // المفتاح 6: (رمز المادة، اسم المورد، الافرادي) مع اخذ تاريخ الصلاحية الاقرب ثم الابعد + تاريخ المرتجع اكبر او يساوي تاريخ الشراء
-    // المفتاح 7: (رمز المادة، اسم المورد) مع اخذ تاريخ الصلاحية الاقرب ثم الابعد + تاريخ المرتجع اكبر او يساوي تاريخ الشراء
-    // المفتاح 8: (رمز المادة) مع اخذ تاريخ الصلاحية الاقرب ثم الابعد + تاريخ المرتجع اكبر او يساوي تاريخ الشراء
-    const getMatchingKeys = (returnRecord) => [
-        // المفتاح 1: (رمز المادة، الكمية، اسم المورد، تاريخ الصلاحية، الافرادي)
-        (p) => {
-            const result = p['رمز المادة'] === returnRecord['رمز المادة'] &&
-                compare(p['الكمية'], returnRecord['الكمية']) === 0 &&
-                p['المورد'] === returnRecord['المورد'] &&
-                p['تاريخ الصلاحية'] === returnRecord['تاريخ الصلاحية'] &&
-                p['الافرادي'] === returnRecord['الافرادي'];
-            console.log(`Key 1 match for return ${returnRecord['م']} with purchase ${p['م']}: ${result}`);
-            return result;
-        },
+    console.log(`🔨 [NetPurchases] بناء الفهارس...`);
+    const indexes = buildPurchaseIndexes(netPurchasesList);
+    console.log(`✅ [NetPurchases] تم بناء ${indexes.byMaterialCode.size} فهرس`);
 
-        // المفتاح 2: (رمز المادة، اسم المورد، تاريخ الصلاحية، الافرادي بعد التقريب لاقرب رقم عشري) + تاريخ المرتجع اكبر او يساوي تاريخ الشراء
-        (p) => {
-            const dateCheck = new Date(returnRecord['تاريخ العملية']) >= new Date(p['تاريخ العملية']);
-            const result = dateCheck &&
-                p['رمز المادة'] === returnRecord['رمز المادة'] &&
-                p['المورد'] === returnRecord['المورد'] &&
-                p['تاريخ الصلاحية'] === returnRecord['تاريخ الصلاحية'] &&
-                roundToInteger(p['الافرادي']) === roundToInteger(returnRecord['الافرادي']);
-            console.log(`Key 2 match for return ${returnRecord['م']} with purchase ${p['م']}: ${result} (dateCheck: ${dateCheck})`);
-            return result;
-        },
+    let matchedCount = 0;
 
-        // المفتاح 3: (رمز المادة، اسم المورد، تاريخ الصلاحية) + تاريخ المرتجع اكبر او يساوي تاريخ الشراء
-        (p) => {
-            const dateCheck = new Date(returnRecord['تاريخ العملية']) >= new Date(p['تاريخ العملية']);
-            const result = dateCheck &&
-                p['رمز المادة'] === returnRecord['رمز المادة'] &&
-                p['المورد'] === returnRecord['المورد'] &&
-                p['تاريخ الصلاحية'] === returnRecord['تاريخ الصلاحية'];
-            console.log(`Key 3 match for return ${returnRecord['م']} with purchase ${p['م']}: ${result} (dateCheck: ${dateCheck})`);
-            return result;
-        },
-
-        // المفتاح 4: (رمز المادة، تاريخ الصلاحية، الافرادي) + تاريخ المرتجع اكبر او يساوي تاريخ الشراء
-        (p) => {
-            const dateCheck = new Date(returnRecord['تاريخ العملية']) >= new Date(p['تاريخ العملية']);
-            const result = dateCheck &&
-                p['رمز المادة'] === returnRecord['رمز المادة'] &&
-                p['تاريخ الصلاحية'] === returnRecord['تاريخ الصلاحية'] &&
-                p['الافرادي'] === returnRecord['الافرادي'];
-            console.log(`Key 4 match for return ${returnRecord['م']} with purchase ${p['م']}: ${result} (dateCheck: ${dateCheck})`);
-            return result;
-        },
-
-        // المفتاح 5: (رمز المادة، تاريخ الصلاحية) + تاريخ المرتجع اكبر او يساوي تاريخ الشراء
-        (p) => {
-            const dateCheck = new Date(returnRecord['تاريخ العملية']) >= new Date(p['تاريخ العملية']);
-            const result = dateCheck &&
-                p['رمز المادة'] === returnRecord['رمز المادة'] &&
-                p['تاريخ الصلاحية'] === returnRecord['تاريخ الصلاحية'];
-            console.log(`Key 5 match for return ${returnRecord['م']} with purchase ${p['م']}: ${result} (dateCheck: ${dateCheck})`);
-            return result;
-        },
-
-        // المفتاح 6: (رمز المادة، اسم المورد، الافرادي) مع اخذ تاريخ الصلاحية الاقرب ثم الابعد + تاريخ المرتجع اكبر او يساوي تاريخ الشراء
-        (p) => {
-            const dateCheck = new Date(returnRecord['تاريخ العملية']) >= new Date(p['تاريخ العملية']);
-            const result = dateCheck &&
-                p['رمز المادة'] === returnRecord['رمز المادة'] &&
-                p['المورد'] === returnRecord['المورد'] &&
-                p['الافرادي'] === returnRecord['الافرادي'];
-            console.log(`Key 6 match for return ${returnRecord['م']} with purchase ${p['م']}: ${result} (dateCheck: ${dateCheck})`);
-            return result;
-        },
-
-        // المفتاح 7: (رمز المادة، اسم المورد) مع اخذ تاريخ الصلاحية الاقرب ثم الابعد + تاريخ المرتجع اكبر او يساوي تاريخ الشراء
-        (p) => {
-            const dateCheck = new Date(returnRecord['تاريخ العملية']) >= new Date(p['تاريخ العملية']);
-            const result = dateCheck &&
-                p['رمز المادة'] === returnRecord['رمز المادة'] &&
-                p['المورد'] === returnRecord['المورد'];
-            console.log(`Key 7 match for return ${returnRecord['م']} with purchase ${p['م']}: ${result} (dateCheck: ${dateCheck})`);
-            return result;
-        },
-
-        // المفتاح 8: (رمز المادة) مع اخذ تاريخ الصلاحية الاقرب ثم الابعد + تاريخ المرتجع اكبر او يساوي تاريخ الشراء
-        (p) => {
-            const dateCheck = new Date(returnRecord['تاريخ العملية']) >= new Date(p['تاريخ العملية']);
-            const result = dateCheck &&
-                p['رمز المادة'] === returnRecord['رمز المادة'];
-            console.log(`Key 8 match for return ${returnRecord['م']} with purchase ${p['م']}: ${result} (dateCheck: ${dateCheck})`);
-            return result;
-        },
-    ];
-
-    // 5. المرور على كل مرتجع ومحاولة استنزاله من المشتريات باستخدام الحسابات المالية الدقة
-    for (const returnRecord of purchaseReturns) {
-        console.log(`Processing return record:`, returnRecord);
+    for (let returnIdx = 0; returnIdx < purchaseReturns.length; returnIdx++) {
+        const returnRecord = purchaseReturns[returnIdx];
         let remainingReturnQty = roundToDecimalPlaces(returnRecord['الكمية'] || 0, 2);
-        console.log(`Initial remaining return quantity: ${remainingReturnQty.toString()}`);
-        if (compare(remainingReturnQty, 0) <= 0) {
-            console.log('Return quantity is zero or negative, skipping');
-            continue;
-        }
+
+        if (compare(remainingReturnQty, 0) <= 0) continue;
 
         let matched = false;
-        let usedKeyNumber = -1;
+        const retMatCode = returnRecord['رمز المادة'];
+        const retSupplier = returnRecord['المورد'];
+        const retExpiry = returnRecord['تاريخ الصلاحية'];
+        const retPrice = returnRecord['الافرادي'];
+        const retQty = returnRecord['الكمية'];
+        const retDate = new Date(returnRecord['تاريخ العملية']);
 
-        const matchingKeys = getMatchingKeys(returnRecord);
+        const tryMatch = (keyNum, candidateList, filterFn) => {
+            if (matched || compare(remainingReturnQty, 0) <= 0) return;
+            if (!candidateList) return;
 
-        // جرب كل مفتاح بالترتيب
-        for (let keyIndex = 0; keyIndex < matchingKeys.length; keyIndex++) {
-            if (compare(remainingReturnQty, 0) <= 0) {
-                console.log('Remaining return quantity is zero, breaking');
-                break;
-            }
+            // Iterate over the PRE-SORTED candidate list
+            for (const { record: purchaseRecord, index: purchaseIndex } of candidateList) {
+                if (compare(remainingReturnQty, 0) <= 0) break;
 
-            const keyFunction = matchingKeys[keyIndex];
+                // Skip if purchase has no quantity left
+                if (compare(purchaseRecord['الكمية'], 0) <= 0) continue;
 
-            // البحث عن جميع السجلات المطابقة مع هذا المفتاح
-            let matchingPurchases = netPurchasesList.filter(
-                p => compare(p['الكمية'], 0) > 0 && keyFunction(p)
-            );
-            
-            console.log(`Key ${keyIndex + 1} found ${matchingPurchases.length} matching purchases`);
+                // Apply strategy filter
+                if (!filterFn(purchaseRecord)) continue;
 
-            // ترتيب السجلات المطابقة: الاحدث ثم الاقدم
-            matchingPurchases.sort((a, b) => {
-                const dateDiff = new Date(b['تاريخ العملية']) - new Date(a['تاريخ العملية']);
-                if (dateDiff !== 0) return dateDiff;
-                // إذا كانت التواريخ متساوية، نرتب حسب معرف السجل
-                return a['م'] - b['م'];
-            });
-
-            // ⭐ الحلقة الداخلية: استنزال من كل السجلات المطابقة بنفس المفتاح وفقاً للترتيب
-            for (const purchaseRecord of matchingPurchases) {
-                if (compare(remainingReturnQty, 0) <= 0) {
-                    console.log('Remaining return quantity is zero, breaking inner loop');
-                    break;
-                }
-
-                const purchaseIndex = netPurchasesList.findIndex(p => p['م'] === purchaseRecord['م']);
-                if (purchaseIndex === -1) {
-                    console.log('Purchase record not found in netPurchasesList, continuing');
-                    continue;
-                }
-
-                const purchaseQty = netPurchasesList[purchaseIndex]['الكمية'];
-                console.log(`Processing match: Return qty ${remainingReturnQty.toString()}, Purchase qty ${purchaseQty.toString()}`);
+                const purchaseQty = purchaseRecord['الكمية'];
 
                 if (compare(purchaseQty, remainingReturnQty) >= 0) {
-                    // التطابق كامل: خصم كمية المرتجع بالكامل باستخدام الحسابات المالية الدقة
-                    netPurchasesList[purchaseIndex]['الكمية'] = subtract(netPurchasesList[purchaseIndex]['الكمية'], remainingReturnQty);
-                    netPurchasesList[purchaseIndex]['ملاحظات'] = `مطابق (مفتاح ${keyIndex + 1})`;
-                    
-                    // تسجيل عملية المطابقة في سجل التدقيق
-                    matchingAudit.recordMatch(
-                        'NetPurchases',
-                        keyIndex + 1,
-                        returnRecord['م'],
-                        purchaseRecord['م'],
-                        remainingReturnQty,
-                        returnRecord,
-                        purchaseRecord
-                    );
-                    
-                    console.log(`Full match: Return ${returnRecord['م']} with purchase ${purchaseRecord['م']} using key ${keyIndex + 1}`);
+                    purchaseRecord['الكمية'] = subtract(purchaseQty, remainingReturnQty);
+                    purchaseRecord['ملاحظات'] = `مطابق (مفتاح ${keyNum})`;
+                    matchingAudit.recordMatch('NetPurchases', keyNum, returnRecord['م'], purchaseRecord['م'], remainingReturnQty, returnRecord, purchaseRecord);
                     remainingReturnQty = new Decimal(0);
                     matched = true;
-                    usedKeyNumber = keyIndex + 1;
-                    break; // الانتهاء من هذا المفتاح
+                    matchedCount++;
+                    break;
                 } else {
-                    // تطابق جزئي: خصم كمية المشتريات بالكامل واستمر باستخدام الحسابات المالية الدقة
-                    netPurchasesList[purchaseIndex]['الكمية'] = new Decimal(0);
-                    netPurchasesList[purchaseIndex]['ملاحظات'] = `مطابق جزئي (مفتاح ${keyIndex + 1})`;
-                    
-                    // تسجيل عملية المطابقة في سجل التدقيق
-                    matchingAudit.recordMatch(
-                        'NetPurchases',
-                        keyIndex + 1,
-                        returnRecord['م'],
-                        purchaseRecord['م'],
-                        purchaseQty,
-                        returnRecord,
-                        purchaseRecord
-                    );
-                    
-                    console.log(`Partial match: Return ${returnRecord['م']} with purchase ${purchaseRecord['م']} using key ${keyIndex + 1}`);
+                    purchaseRecord['الكمية'] = new Decimal(0);
+                    purchaseRecord['ملاحظات'] = `مطابق جزئي (مفتاح ${keyNum})`;
+                    matchingAudit.recordMatch('NetPurchases', keyNum, returnRecord['م'], purchaseRecord['م'], purchaseQty, returnRecord, purchaseRecord);
                     remainingReturnQty = subtract(remainingReturnQty, purchaseQty);
                     matched = true;
-                    usedKeyNumber = keyIndex + 1;
+                    matchedCount++;
                 }
             }
+        };
 
-            if (matched) {
-                console.log(`Return ${returnRecord['م']} matched using key ${keyIndex + 1}, breaking to next return`);
-                break; // الانتقال إلى المرتجع التالي بعد التطابق
-            }
-        }
+        const matExpKey = `${retMatCode}|${retExpiry}`;
+        const matSupKey = `${retMatCode}|${retSupplier}`;
 
-        // إذا لم يتطابق المرتجع مع أي شراء، إضافته إلى قائمة المرتجعات اليتيمة
+        // Retrieve pre-sorted lists
+        const candidates = indexes.byMaterialAndExpiry.get(matExpKey);
+        const candidatesSup = indexes.byMaterialAndSupplier.get(matSupKey);
+        const candidatesMat = indexes.byMaterialCode.get(retMatCode);
+
+        tryMatch(1, candidates, p =>
+            compare(p['الكمية'], retQty) === 0 && p['المورد'] === retSupplier &&
+            p['تاريخ الصلاحية'] === retExpiry && p['الافرادي'] === retPrice
+        );
+
+        tryMatch(2, candidates, p =>
+            retDate >= new Date(p['تاريخ العملية']) &&
+            p['المورد'] === retSupplier && p['تاريخ الصلاحية'] === retExpiry &&
+            roundToInteger(p['الافرادي']) === roundToInteger(retPrice)
+        );
+
+        tryMatch(3, candidates, p =>
+            retDate >= new Date(p['تاريخ العملية']) &&
+            p['المورد'] === retSupplier && p['تاريخ الصلاحية'] === retExpiry
+        );
+
+        tryMatch(4, candidates, p =>
+            retDate >= new Date(p['تاريخ العملية']) &&
+            p['تاريخ الصلاحية'] === retExpiry && p['الافرادي'] === retPrice
+        );
+
+        tryMatch(5, candidates, p =>
+            retDate >= new Date(p['تاريخ العملية']) &&
+            p['تاريخ الصلاحية'] === retExpiry
+        );
+
+        tryMatch(6, candidatesSup, p =>
+            retDate >= new Date(p['تاريخ العملية']) &&
+            p['المورد'] === retSupplier && p['الافرادي'] === retPrice
+        );
+
+        tryMatch(7, candidatesSup, p =>
+            retDate >= new Date(p['تاريخ العملية']) &&
+            p['المورد'] === retSupplier
+        );
+
+        tryMatch(8, candidatesMat, p =>
+            retDate >= new Date(p['تاريخ العملية'])
+        );
+
         if (!matched) {
-            console.log(`Return ${returnRecord['م']} did not match any purchase, adding to orphan returns`);
             orphanReturnsList.push({
                 ...returnRecord,
                 'م': orphanReturnsList.length + 1,
@@ -332,25 +231,25 @@ export const calculateNetPurchases = (allPurchasesRaw, purchaseReturnsRaw, heade
                 'ملاحظات': 'مرتجع يتيـم'
             });
         }
+
+        const progressInterval = Math.max(1, Math.floor(purchaseReturns.length * 0.1));
+        if ((returnIdx + 1) % progressInterval === 0 || returnIdx === purchaseReturns.length - 1) {
+            const percentage = ((returnIdx + 1) / purchaseReturns.length * 100).toFixed(0);
+            console.log(`⏳ [NetPurchases] ${returnIdx + 1}/${purchaseReturns.length} (${percentage}% - ${matchedCount} مطابقة)`);
+        }
     }
 
-    // 6. إزالة السجلات التي أصبحت كميتها صفر بعد المطابقة
     const originalLength = netPurchasesList.length;
     netPurchasesList = netPurchasesList.filter(p => compare(p['الكمية'], 0) > 0);
-    console.log(`Filtered out ${originalLength - netPurchasesList.length} records with zero quantity`);
+    netPurchasesList = netPurchasesList.map((p, index) => ({ ...p, 'م': index + 1 }));
 
-    // 7. تحديث الأرقام التسلسلية بعد الفلترة
-    netPurchasesList = netPurchasesList.map((p, index) => ({
-        ...p,
-        'م': index + 1
-    }));
+    const totalTime = performance.now() - startTime;
+    const throughput = ((allPurchases.length + purchaseReturns.length) / totalTime * 1000).toFixed(0);
 
-    console.log('Final net purchases list:', netPurchasesList);
-    console.log('Final orphan returns list:', orphanReturnsList);
+    console.log(`✅ [NetPurchases] مكتمل:`);
+    console.log(`   ⏱️  ${totalTime.toFixed(0)}ms | ⚡ ${throughput} سجل/ث`);
+    console.log(`   📊 ${netPurchasesList.length} صافي | ${orphanReturnsList.length} يتيمة | ${originalLength - netPurchasesList.length} محذوفة`);
+    console.log(`   🎯 ${matchedCount}/${purchaseReturns.length} (${(matchedCount / purchaseReturns.length * 100).toFixed(1)}%)`);
 
-    console.log('--- انتهت معالجة صافي المشتريات ---');
-    return {
-        netPurchasesList,
-        orphanReturnsList
-    };
+    return { netPurchasesList, orphanReturnsList };
 };

@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next';
 
 const { Title } = Typography;
 
-function NetPurchasesPage({ data }) {
+function NetPurchasesPage({ data, allReportsData }) {
     const { t } = useTranslation();
     const [selectedTab, setSelectedTab] = useState('netPurchases');
 
@@ -62,11 +62,12 @@ function NetPurchasesPage({ data }) {
             <p>عرض المشتريات بعد خصم المرتجعات المطابقة، والمرتجعات التي لم يتم مطابقتها، مع بيانات المطابقة مع الجرد الفعلي.</p>
 
             {/* Print/Export buttons */}
-            <PrintExportButtons 
+            <PrintExportButtons
                 data={selectedTab === 'netPurchases' ? data.netPurchasesList : data.orphanReturnsList}
                 title={`${t('netPurchases')} - ${selectedTab === 'netPurchases' ? 'قائمة A: المشتريات الفعلية' : 'قائمة B: المرتجعات اليتيمة'}`}
                 columns={columns}
                 filename={selectedTab === 'netPurchases' ? 'net-purchases' : 'orphan-returns'}
+                allReportsData={allReportsData}
             />
 
             <Radio.Group value={selectedTab} onChange={(e) => setSelectedTab(e.target.value)} style={{ marginBottom: 16 }}>

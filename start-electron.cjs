@@ -41,6 +41,9 @@ async function startApp() {
     // تمرير عنوان السيرفر لمقدمة Electron عبر متغير بيئة لاستخدامه عند التحميل
     const env = { ...process.env, ELECTRON_START_URL: serverUrl };
 
+    // تأكد من أن Electron لا يعمل بوضع Node العادي
+    delete env.ELECTRON_RUN_AS_NODE;
+
     const electronProcess = spawn(electronPath, ['.'], {
       stdio: 'inherit',
       shell: false,

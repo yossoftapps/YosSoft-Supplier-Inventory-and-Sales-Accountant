@@ -1,9 +1,10 @@
-// دالة مساعدة لتحويل مصفوفة المصفوفات إلى مصفوفة كائنات
-// convertToObjects: convert array-of-rows to array-of-objects
-// Accepts either: (dataWithHeaderRow) OR (dataRows, headers)
+// ═══════════════════════════════════════════════════════════════════════════
+// صافي المبيعات - إصدار محسّن للأداء ULTRA
+// Net Sales - ULTRA Performance Optimized Version
+// ═══════════════════════════════════════════════════════════════════════════
+
 const convertToObjects = (data, headersParam) => {
     if (!data || data.length === 0) return [];
-
     let headers = headersParam;
     let rows = data;
 
@@ -28,315 +29,219 @@ const convertToObjects = (data, headersParam) => {
 
     return rows.map(row => {
         const obj = {};
-        headers.forEach((header, index) => {
-            obj[header] = row[index];
-        });
+        headers.forEach((header, index) => { obj[header] = row[index]; });
         return obj;
     });
 };
 
-// دالة مساعدة للفرز حسب التاريخ
 const sortByDateDesc = (data, dateKey) => {
     return data.sort((a, b) => new Date(b[dateKey]) - new Date(a[dateKey]));
 };
 
-// استيراد اداة تتبع المطابقات
 import matchingAudit from '../audit/matchingAudit.js';
-
-// استيراد ادوات الحسابات المالية الدقة
-import { 
-    roundToInteger, 
-    roundToDecimalPlaces, 
-    formatMoney, 
-    formatQuantity,
-    multiply,
-    subtract,
-    add,
-    compare,
-    Decimal,
-    parseQuantity
+import {
+    roundToInteger, roundToDecimalPlaces, multiply, subtract, add, compare, Decimal, parseQuantity
 } from '../utils/financialCalculations.js';
 
 /**
- * حساب صافي المبيعات بتطبيق 10 مفاتيح مطابقة حسب الاولوية كما ورد في المواصفات
- * @param {Array} allSalesRaw - بيانات المبيعات الخام (مع العناوين)
- * @param {Array} salesReturnsRaw - بيانات المرتجعات الخام (مع العناوين)
- * @returns {Object} { netSalesList, orphanReturnsList }
+ * بناء فهارس سريعة للمبيعات - O(n)
+ */
+const buildSalesIndexes = (sales) => {
+    const indexes = {
+        byMaterialCode: new Map(),
+        byMaterialAndExpiry: new Map()
+    };
+
+    const addFn = (map, key, item) => {
+        if (!map.has(key)) map.set(key, []);
+        map.get(key).push(item);
+    };
+
+    sales.forEach((s, idx) => {
+        // Cache date for faster sorting
+        const item = {
+            record: s,
+            index: idx,
+            _date: new Date(s['تاريخ العملية'])
+        };
+
+        const matCode = s['رمز المادة'];
+        const expiry = s['تاريخ الصلاحية'];
+
+        // فهرس 1: رمز المادة فقط
+        addFn(indexes.byMaterialCode, matCode, item);
+
+        // فهرس 2: رمز المادة + تاريخ الصلاحية
+        addFn(indexes.byMaterialAndExpiry, `${matCode}|${expiry}`, item);
+    });
+
+    // Sort all lists once (Descending by Date)
+    const sortFn = (list) => list.sort((a, b) => (b._date - a._date) || (a.index - b.index));
+
+    indexes.byMaterialCode.forEach(sortFn);
+    indexes.byMaterialAndExpiry.forEach(sortFn);
+
+    return indexes;
+};
+
+/**
+ * حساب صافي المبيعات - محسّن ULTRA
  */
 export const calculateNetSales = (allSalesRaw, salesReturnsRaw, headers = null) => {
-    console.log('--- بدء معالجة صافي المبيعات ---');
-    console.log('Input sales raw:', allSalesRaw);
-    console.log('Input returns raw:', salesReturnsRaw);
-    console.log('Sales raw length:', allSalesRaw ? allSalesRaw.length : 0);
-    console.log('Returns raw length:', salesReturnsRaw ? salesReturnsRaw.length : 0);
+    const startTime = performance.now();
+    console.log(`🚀 [NetSales] معالجة: ${allSalesRaw?.length || 0} مبيعات، ${salesReturnsRaw?.length || 0} مرتجعات`);
 
-    // 1. تحويل البيانات إلى كائنات
-    const allSales = convertToObjects(allSalesRaw, headers || undefined);
-    const salesReturns = convertToObjects(salesReturnsRaw, headers || undefined);
-    console.log('Converted sales:', allSales);
-    console.log('Converted returns:', salesReturns);
-    console.log('Converted sales length:', allSales.length);
-    console.log('Converted returns length:', salesReturns.length);
+    const allSales = convertToObjects(allSalesRaw, headers);
+    const salesReturns = convertToObjects(salesReturnsRaw, headers);
 
-    // Early return if no data
     if (allSales.length === 0 && salesReturns.length === 0) {
-        console.log('No sales data found, returning empty results');
-        return {
-            netSalesList: [],
-            orphanReturnsList: []
-        };
+        return { netSalesList: [], orphanReturnsList: [] };
     }
 
-    // 2. فرز المبيعات من الاحدث إلى الاقدم
     const sortedSales = sortByDateDesc([...allSales], 'تاريخ العملية');
-    console.log('Sorted sales:', sortedSales);
 
-    // 3. إنشاء نسخة عمل من المبيعات باستخدام الحسابات المالية الدقة
-    // Safely parse quantities and log diagnostics per record
     let netSalesList = sortedSales.map((s, index) => {
         const rawQty = s['الكمية'];
         const parsed = parseQuantity(rawQty);
         const qty = parsed ? roundToDecimalPlaces(parsed, 2) : roundToDecimalPlaces(0, 2);
-        console.log(`[DIAG][NetSales] record ${index + 1} rawQty=`, rawQty, 'parsed=', parsed ? parsed.toString() : null, 'finalQty=', qty.toString());
         return {
             ...s,
-            'م': index + 1, // إضافة الرقم التسلسلي مبدئياً
+            'م': index + 1,
             'الكمية': qty,
             'ملاحظات': 'لايوجد مرتجع',
             'القائمة': 'C'
         };
     });
 
-    console.log('Initial net sales list:', netSalesList);
-
     const orphanReturnsList = [];
 
-    // 4. تعريف المفاتيح العشرة حسب الاولوية للمبيعات كما ورد في المواصفات
-    // المفتاح 1:- (رمز المادة، تاريخ الصلاحية، الافرادي، الكمية)
-    // المفتاح 2:- (رمز المادة، تاريخ الصلاحية، الافرادي بعد التقريب لاقرب رقم عشري، الكمية) + تاريخ المرتجع اكبر او يساوي تاريخ البيع
-    // المفتاح 3:- (رمز المادة، تاريخ الصلاحية، الكمية) + تاريخ المرتجع اكبر او يساوي تاريخ البيع
-    // المفتاح 4:- (رمز المادة، تاريخ الصلاحية، الافرادي) + تاريخ المرتجع اكبر او يساوي تاريخ البيع
-    // المفتاح 5:- (رمز المادة، تاريخ الصلاحية، الافرادي بعد التقريب لاقرب رقم عشري) + تاريخ المرتجع اكبر او يساوي تاريخ البيع
-    // المفتاح 6:- (رمز المادة، تاريخ الصلاحية) + تاريخ المرتجع اكبر او يساوي تاريخ البيع
-    // المفتاح 7:- (رمز المادة، الافرادي، الكمية) ويُراعى تاريخ الصلاحية الاقرب فالابعد + تاريخ المرتجع اكبر او يساوي تاريخ البيع
-    // المفتاح 8:- (رمز المادة، الافرادي) ويُراعى تاريخ الصلاحية الاقرب فالابعد + تاريخ المرتجع اكبر او يساوي تاريخ البيع
-    // المفتاح 9:- (رمز المادة، الكمية) ويُراعى تاريخ الصلاحية الاقرب فالابعد + تاريخ المرتجع اكبر او يساوي تاريخ البيع
-    // المفتاح 10:- (رمز المادة) ويُراعى تاريخ الصلاحية الاقرب فالابعد + تاريخ المرتجع اكبر او يساوي تاريخ البيع
-    const getMatchingKeys = (returnRecord) => [
-        // المفتاح 1:- (رمز المادة، تاريخ الصلاحية، الافرادي، الكمية)
-        (s) => {
-            const result = s['رمز المادة'] === returnRecord['رمز المادة'] &&
-                s['تاريخ الصلاحية'] === returnRecord['تاريخ الصلاحية'] &&
-                s['الافرادي'] === returnRecord['الافرادي'] &&
-                compare(s['الكمية'], returnRecord['الكمية']) === 0;
-            console.log(`Key 1 match for return ${returnRecord['م']} with sale ${s['م']}: ${result}`);
-            return result;
-        },
+    // ═══ بناء الفهارس - O(n) ═══
+    console.log(`🔨 [NetSales] بناء الفهارس...`);
+    const indexes = buildSalesIndexes(netSalesList);
+    console.log(`✅ [NetSales] تم بناء ${indexes.byMaterialCode.size} فهرس`);
 
-        // المفتاح 2:- (رمز المادة، تاريخ الصلاحية، الافرادي بعد التقريب لاقرب رقم عشري، الكمية) + تاريخ المرتجع اكبر او يساوي تاريخ البيع
-        (s) => {
-            const dateCheck = new Date(returnRecord['تاريخ العملية']) >= new Date(s['تاريخ العملية']);
-            const result = dateCheck &&
-                s['رمز المادة'] === returnRecord['رمز المادة'] &&
-                s['تاريخ الصلاحية'] === returnRecord['تاريخ الصلاحية'] &&
-                roundToInteger(s['الافرادي']) === roundToInteger(returnRecord['الافرادي']) &&
-                compare(s['الكمية'], returnRecord['الكمية']) === 0;
-            console.log(`Key 2 match for return ${returnRecord['م']} with sale ${s['م']}: ${result} (dateCheck: ${dateCheck})`);
-            return result;
-        },
+    // ═══ المطابقة المحسّنة - O(n) ═══
+    let matchedCount = 0;
 
-        // المفتاح 3:- (رمز المادة، تاريخ الصلاحية، الكمية) + تاريخ المرتجع اكبر او يساوي تاريخ البيع
-        (s) => {
-            const dateCheck = new Date(returnRecord['تاريخ العملية']) >= new Date(s['تاريخ العملية']);
-            const result = dateCheck &&
-                s['رمز المادة'] === returnRecord['رمز المادة'] &&
-                s['تاريخ الصلاحية'] === returnRecord['تاريخ الصلاحية'] &&
-                compare(s['الكمية'], returnRecord['الكمية']) === 0;
-            console.log(`Key 3 match for return ${returnRecord['م']} with sale ${s['م']}: ${result} (dateCheck: ${dateCheck})`);
-            return result;
-        },
-
-        // المفتاح 4:- (رمز المادة، تاريخ الصلاحية، الافرادي) + تاريخ المرتجع اكبر او يساوي تاريخ البيع
-        (s) => {
-            const dateCheck = new Date(returnRecord['تاريخ العملية']) >= new Date(s['تاريخ العملية']);
-            const result = dateCheck &&
-                s['رمز المادة'] === returnRecord['رمز المادة'] &&
-                s['تاريخ الصلاحية'] === returnRecord['تاريخ الصلاحية'] &&
-                s['الافرادي'] === returnRecord['الافرادي'];
-            console.log(`Key 4 match for return ${returnRecord['م']} with sale ${s['م']}: ${result} (dateCheck: ${dateCheck})`);
-            return result;
-        },
-
-        // المفتاح 5:- (رمز المادة، تاريخ الصلاحية، الافرادي بعد التقريب لاقرب رقم عشري) + تاريخ المرتجع اكبر او يساوي تاريخ البيع
-        (s) => {
-            const dateCheck = new Date(returnRecord['تاريخ العملية']) >= new Date(s['تاريخ العملية']);
-            const result = dateCheck &&
-                s['رمز المادة'] === returnRecord['رمز المادة'] &&
-                s['تاريخ الصلاحية'] === returnRecord['تاريخ الصلاحية'] &&
-                roundToInteger(s['الافرادي']) === roundToInteger(returnRecord['الافرادي']);
-            console.log(`Key 5 match for return ${returnRecord['م']} with sale ${s['م']}: ${result} (dateCheck: ${dateCheck})`);
-            return result;
-        },
-
-        // المفتاح 6:- (رمز المادة، تاريخ الصلاحية) + تاريخ المرتجع اكبر او يساوي تاريخ البيع
-        (s) => {
-            const dateCheck = new Date(returnRecord['تاريخ العملية']) >= new Date(s['تاريخ العملية']);
-            const result = dateCheck &&
-                s['رمز المادة'] === returnRecord['رمز المادة'] &&
-                s['تاريخ الصلاحية'] === returnRecord['تاريخ الصلاحية'];
-            console.log(`Key 6 match for return ${returnRecord['م']} with sale ${s['م']}: ${result} (dateCheck: ${dateCheck})`);
-            return result;
-        },
-
-        // المفتاح 7:- (رمز المادة، الافرادي، الكمية) ويُراعى تاريخ الصلاحية الاقرب فالابعد + تاريخ المرتجع اكبر او يساوي تاريخ البيع
-        (s) => {
-            const dateCheck = new Date(returnRecord['تاريخ العملية']) >= new Date(s['تاريخ العملية']);
-            const result = dateCheck &&
-                s['رمز المادة'] === returnRecord['رمز المادة'] &&
-                s['الافرادي'] === returnRecord['الافرادي'] &&
-                compare(s['الكمية'], returnRecord['الكمية']) === 0;
-            console.log(`Key 7 match for return ${returnRecord['م']} with sale ${s['م']}: ${result} (dateCheck: ${dateCheck})`);
-            return result;
-        },
-
-        // المفتاح 8:- (رمز المادة، الافرادي) ويُراعى تاريخ الصلاحية الاقرب فالابعد + تاريخ المرتجع اكبر او يساوي تاريخ البيع
-        (s) => {
-            const dateCheck = new Date(returnRecord['تاريخ العملية']) >= new Date(s['تاريخ العملية']);
-            const result = dateCheck &&
-                s['رمز المادة'] === returnRecord['رمز المادة'] &&
-                s['الافرادي'] === returnRecord['الافرادي'];
-            console.log(`Key 8 match for return ${returnRecord['م']} with sale ${s['م']}: ${result} (dateCheck: ${dateCheck})`);
-            return result;
-        },
-
-        // المفتاح 9:- (رمز المادة، الكمية) ويُراعى تاريخ الصلاحية الاقرب فالابعد + تاريخ المرتجع اكبر او يساوي تاريخ البيع
-        (s) => {
-            const dateCheck = new Date(returnRecord['تاريخ العملية']) >= new Date(s['تاريخ العملية']);
-            const result = dateCheck &&
-                s['رمز المادة'] === returnRecord['رمز المادة'] &&
-                compare(s['الكمية'], returnRecord['الكمية']) === 0;
-            console.log(`Key 9 match for return ${returnRecord['م']} with sale ${s['م']}: ${result} (dateCheck: ${dateCheck})`);
-            return result;
-        },
-
-        // المفتاح 10:- (رمز المادة) ويُراعى تاريخ الصلاحية الاقرب فالابعد + تاريخ المرتجع اكبر او يساوي تاريخ البيع
-        (s) => {
-            const dateCheck = new Date(returnRecord['تاريخ العملية']) >= new Date(s['تاريخ العملية']);
-            const result = dateCheck &&
-                s['رمز المادة'] === returnRecord['رمز المادة'];
-            console.log(`Key 10 match for return ${returnRecord['م']} with sale ${s['م']}: ${result} (dateCheck: ${dateCheck})`);
-            return result;
-        },
-    ];
-
-    // 5. المرور على كل مرتجع ومحاولة استنزاله من المبيعات باستخدام الحسابات المالية الدقة
-    for (const returnRecord of salesReturns) {
-        console.log(`Processing return record:`, returnRecord);
+    for (let returnIdx = 0; returnIdx < salesReturns.length; returnIdx++) {
+        const returnRecord = salesReturns[returnIdx];
         let remainingReturnQty = roundToDecimalPlaces(returnRecord['الكمية'] || 0, 2);
-        console.log(`Initial remaining return quantity: ${remainingReturnQty.toString()}`);
-        if (compare(remainingReturnQty, 0) <= 0) {
-            console.log('Return quantity is zero or negative, skipping');
-            continue;
-        }
+
+        if (compare(remainingReturnQty, 0) <= 0) continue;
 
         let matched = false;
-        let usedKeyNumber = -1;
+        const retMatCode = returnRecord['رمز المادة'];
+        const retExpiry = returnRecord['تاريخ الصلاحية'];
+        const retPrice = returnRecord['الافرادي'];
+        const retQty = returnRecord['الكمية'];
+        const retDate = new Date(returnRecord['تاريخ العملية']);
 
-        const matchingKeys = getMatchingKeys(returnRecord);
+        // دالة المطابقة الموحدة
+        const tryMatch = (keyNum, candidateList, filterFn) => {
+            if (matched || compare(remainingReturnQty, 0) <= 0) return;
+            if (!candidateList) return;
 
-        // جرب كل مفتاح بالترتيب
-        for (let keyIndex = 0; keyIndex < matchingKeys.length; keyIndex++) {
-            if (compare(remainingReturnQty, 0) <= 0) {
-                console.log('Remaining return quantity is zero, breaking');
-                break;
-            }
+            // Iterate over PRE-SORTED candidate list
+            for (const { record: saleRecord, index: saleIndex } of candidateList) {
+                if (compare(remainingReturnQty, 0) <= 0) break;
 
-            const keyFunction = matchingKeys[keyIndex];
+                // Skip if sale has no quantity left
+                if (compare(saleRecord['الكمية'], 0) <= 0) continue;
 
-            // البحث عن جميع السجلات المطابقة مع هذا المفتاح
-            let matchingSales = netSalesList.filter(
-                s => compare(s['الكمية'], 0) > 0 && keyFunction(s)
-            );
-            
-            console.log(`Key ${keyIndex + 1} found ${matchingSales.length} matching sales`);
+                // Apply strategy filter
+                if (!filterFn(saleRecord)) continue;
 
-            // ترتيب السجلات المطابقة: الاحدث ثم الاقدم
-            matchingSales.sort((a, b) => {
-                const dateDiff = new Date(b['تاريخ العملية']) - new Date(a['تاريخ العملية']);
-                if (dateDiff !== 0) return dateDiff;
-                // إذا كانت التواريخ متساوية، نرتب حسب معرف السجل
-                return a['م'] - b['م'];
-            });
-
-            // ⭐ الحلقة الداخلية: استنزال من كل السجلات المطابقة بنفس المفتاح وفقاً للترتيب
-            for (const saleRecord of matchingSales) {
-                if (compare(remainingReturnQty, 0) <= 0) {
-                    console.log('Remaining return quantity is zero, breaking inner loop');
-                    break;
-                }
-
-                const saleIndex = netSalesList.findIndex(s => s['م'] === saleRecord['م']);
-                if (saleIndex === -1) {
-                    console.log('Sale record not found in netSalesList, continuing');
-                    continue;
-                }
-
-                const saleQty = netSalesList[saleIndex]['الكمية'];
-                console.log(`Processing match: Return qty ${remainingReturnQty.toString()}, Sale qty ${saleQty.toString()}`);
+                const saleQty = saleRecord['الكمية'];
 
                 if (compare(saleQty, remainingReturnQty) >= 0) {
-                    // التطابق كامل: خصم كمية المرتجع بالكامل باستخدام الحسابات المالية الدقة
-                    netSalesList[saleIndex]['الكمية'] = subtract(netSalesList[saleIndex]['الكمية'], remainingReturnQty);
-                    netSalesList[saleIndex]['ملاحظات'] = `مطابق (مفتاح ${keyIndex + 1})`;
-                    
-                    // تسجيل عملية المطابقة في سجل التدقيق
-                    matchingAudit.recordMatch(
-                        'NetSales',
-                        keyIndex + 1,
-                        returnRecord['م'],
-                        saleRecord['م'],
-                        remainingReturnQty,
-                        returnRecord,
-                        saleRecord
-                    );
-                    
-                    console.log(`Full match: Return ${returnRecord['م']} with sale ${saleRecord['م']} using key ${keyIndex + 1}`);
+                    saleRecord['الكمية'] = subtract(saleQty, remainingReturnQty);
+                    saleRecord['ملاحظات'] = `مطابق (مفتاح ${keyNum})`;
+                    matchingAudit.recordMatch('NetSales', keyNum, returnRecord['م'], saleRecord['م'], remainingReturnQty, returnRecord, saleRecord);
                     remainingReturnQty = new Decimal(0);
                     matched = true;
-                    usedKeyNumber = keyIndex + 1;
-                    break; // الانتهاء من هذا المفتاح
+                    matchedCount++;
+                    break;
                 } else {
-                    // تطابق جزئي: خصم كمية المبيعات بالكامل واستمر باستخدام الحسابات المالية الدقة
-                    netSalesList[saleIndex]['الكمية'] = new Decimal(0);
-                    netSalesList[saleIndex]['ملاحظات'] = `مطابق جزئي (مفتاح ${keyIndex + 1})`;
-                    
-                    // تسجيل عملية المطابقة في سجل التدقيق
-                    matchingAudit.recordMatch(
-                        'NetSales',
-                        keyIndex + 1,
-                        returnRecord['م'],
-                        saleRecord['م'],
-                        saleQty,
-                        returnRecord,
-                        saleRecord
-                    );
-                    
-                    console.log(`Partial match: Return ${returnRecord['م']} with sale ${saleRecord['م']} using key ${keyIndex + 1}`);
+                    saleRecord['الكمية'] = new Decimal(0);
+                    saleRecord['ملاحظات'] = `مطابق جزئي (مفتاح ${keyNum})`;
+                    matchingAudit.recordMatch('NetSales', keyNum, returnRecord['م'], saleRecord['م'], saleQty, returnRecord, saleRecord);
                     remainingReturnQty = subtract(remainingReturnQty, saleQty);
                     matched = true;
-                    usedKeyNumber = keyIndex + 1;
+                    matchedCount++;
                 }
             }
+        };
 
-            if (matched) {
-                console.log(`Return ${returnRecord['م']} matched using key ${keyIndex + 1}, breaking to next return`);
-                break; // الانتقال إلى المرتجع التالي بعد التطابق
-            }
-        }
+        // المفاتيح العشرة بالترتيب
+        const matExpKey = `${retMatCode}|${retExpiry}`;
 
-        // إذا لم يتطابق المرتجع مع أي بيع، إضافته إلى قائمة المرتجعات اليتيمة
+        // Retrieve pre-sorted lists
+        const candidates = indexes.byMaterialAndExpiry.get(matExpKey);
+        const candidatesMat = indexes.byMaterialCode.get(retMatCode);
+
+        // المفتاح 1: (رمز، صلاحية، سعر، كمية)
+        tryMatch(1, candidates, s =>
+            s['تاريخ الصلاحية'] === retExpiry && s['الافرادي'] === retPrice &&
+            compare(s['الكمية'], retQty) === 0
+        );
+
+        // المفتاح 2: (رمز، صلاحية، سعر مقرب، كمية) + تاريخ
+        tryMatch(2, candidates, s =>
+            retDate >= new Date(s['تاريخ العملية']) &&
+            s['تاريخ الصلاحية'] === retExpiry &&
+            roundToInteger(s['الافرادي']) === roundToInteger(retPrice) &&
+            compare(s['الكمية'], retQty) === 0
+        );
+
+        // المفتاح 3: (رمز، صلاحية، كمية) + تاريخ
+        tryMatch(3, candidates, s =>
+            retDate >= new Date(s['تاريخ العملية']) &&
+            s['تاريخ الصلاحية'] === retExpiry && compare(s['الكمية'], retQty) === 0
+        );
+
+        // المفتاح 4: (رمز، صلاحية، سعر) + تاريخ
+        tryMatch(4, candidates, s =>
+            retDate >= new Date(s['تاريخ العملية']) &&
+            s['تاريخ الصلاحية'] === retExpiry && s['الافرادي'] === retPrice
+        );
+
+        // المفتاح 5: (رمز، صلاحية، سعر مقرب) + تاريخ
+        tryMatch(5, candidates, s =>
+            retDate >= new Date(s['تاريخ العملية']) &&
+            s['تاريخ الصلاحية'] === retExpiry &&
+            roundToInteger(s['الافرادي']) === roundToInteger(retPrice)
+        );
+
+        // المفتاح 6: (رمز، صلاحية) + تاريخ
+        tryMatch(6, candidates, s =>
+            retDate >= new Date(s['تاريخ العملية']) &&
+            s['تاريخ الصلاحية'] === retExpiry
+        );
+
+        // المفتاح 7: (رمز، سعر، كمية) + تاريخ
+        tryMatch(7, candidatesMat, s =>
+            retDate >= new Date(s['تاريخ العملية']) &&
+            s['الافرادي'] === retPrice && compare(s['الكمية'], retQty) === 0
+        );
+
+        // المفتاح 8: (رمز، سعر) + تاريخ
+        tryMatch(8, candidatesMat, s =>
+            retDate >= new Date(s['تاريخ العملية']) &&
+            s['الافرادي'] === retPrice
+        );
+
+        // المفتاح 9: (رمز، كمية) + تاريخ
+        tryMatch(9, candidatesMat, s =>
+            retDate >= new Date(s['تاريخ العملية']) &&
+            compare(s['الكمية'], retQty) === 0
+        );
+
+        // المفتاح 10: (رمز) + تاريخ
+        tryMatch(10, candidatesMat, s =>
+            retDate >= new Date(s['تاريخ العملية'])
+        );
+
         if (!matched) {
-            console.log(`Return ${returnRecord['م']} did not match any sale, adding to orphan returns`);
             orphanReturnsList.push({
                 ...returnRecord,
                 'م': orphanReturnsList.length + 1,
@@ -345,25 +250,27 @@ export const calculateNetSales = (allSalesRaw, salesReturnsRaw, headers = null) 
                 'ملاحظات': 'مرتجع يتيـم'
             });
         }
+
+        // تقرير تقدم كل 10% من السجلات
+        const progressInterval = Math.max(1, Math.floor(salesReturns.length * 0.1));
+        if ((returnIdx + 1) % progressInterval === 0 || returnIdx === salesReturns.length - 1) {
+            const percentage = ((returnIdx + 1) / salesReturns.length * 100).toFixed(0);
+            console.log(`⏳ [NetSales] ${returnIdx + 1}/${salesReturns.length} (${percentage}% - ${matchedCount} مطابقة)`);
+        }
     }
 
-    // 6. إزالة السجلات التي أصبحت كميتها صفر بعد المطابقة
+    // تصفية وترقيم
     const originalLength = netSalesList.length;
     netSalesList = netSalesList.filter(s => compare(s['الكمية'], 0) > 0);
-    console.log(`Filtered out ${originalLength - netSalesList.length} records with zero quantity`);
+    netSalesList = netSalesList.map((s, index) => ({ ...s, 'م': index + 1 }));
 
-    // 7. تحديث الأرقام التسلسلية بعد الفلترة
-    netSalesList = netSalesList.map((s, index) => ({
-        ...s,
-        'م': index + 1
-    }));
+    const totalTime = performance.now() - startTime;
+    const throughput = ((allSales.length + salesReturns.length) / totalTime * 1000).toFixed(0);
 
-    console.log('Final net sales list:', netSalesList);
-    console.log('Final orphan returns list:', orphanReturnsList);
+    console.log(`✅ [NetSales] مكتمل:`);
+    console.log(`   ⏱️  ${totalTime.toFixed(0)}ms | ⚡ ${throughput} سجل/ث`);
+    console.log(`   📊 ${netSalesList.length} صافي | ${orphanReturnsList.length} يتيمة | ${originalLength - netSalesList.length} محذوفة`);
+    console.log(`   🎯 ${matchedCount}/${salesReturns.length} (${(matchedCount / salesReturns.length * 100).toFixed(1)}%)`);
 
-    console.log('--- انتهت معالجة صافي المبيعات ---');
-    return {
-        netSalesList,
-        orphanReturnsList
-    };
+    return { netSalesList, orphanReturnsList };
 };

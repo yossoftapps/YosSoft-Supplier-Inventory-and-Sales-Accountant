@@ -5,7 +5,7 @@ import PrintExportButtons from '../components/PrintExportButtons';
 
 const { Title } = Typography;
 
-function SalesCostPage({ data }) {
+function SalesCostPage({ data, allReportsData }) {
     if (!data) {
         return (
             <div style={{ padding: '20px' }}>
@@ -45,10 +45,12 @@ function SalesCostPage({ data }) {
         },
         { title: 'تاريخ الصلاحية', dataIndex: 'تاريخ الصلاحية', key: 'تاريخ الصلاحية', width: 120 },
         { title: 'تاريخ العملية', dataIndex: 'تاريخ العملية', key: 'تاريخ العملية', width: 120 },
-        { title: 'الافرادي', dataIndex: 'الافرادي', key: 'الافرادي', width: 80, align: 'left',
+        {
+            title: 'الافرادي', dataIndex: 'الافرادي', key: 'الافرادي', width: 80, align: 'left',
             render: (text) => formatMoney(text)
         },
-        { title: 'افرادي الشراء', dataIndex: 'افرادي الشراء', key: 'افرادي الشراء', width: 90, align: 'left',
+        {
+            title: 'افرادي الشراء', dataIndex: 'افرادي الشراء', key: 'افرادي الشراء', width: 90, align: 'left',
             render: (text) => formatMoney(text)
         },
         { title: 'تاريخ الشراء', dataIndex: 'تاريخ الشراء', key: 'تاريخ الشراء', width: 120 },
@@ -91,11 +93,12 @@ function SalesCostPage({ data }) {
             <p>عرض تكلفة وربحية كل عملية بيع، مع تحديد تكلفة الشراء المطابقة.</p>
 
             {/* Print/Export buttons */}
-            <PrintExportButtons 
+            <PrintExportButtons
                 data={data}
                 title="تقرير تكلفة المبيعات"
                 columns={columns}
                 filename="sales-cost"
+                allReportsData={allReportsData}
             />
 
             <Table

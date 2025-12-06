@@ -285,21 +285,21 @@ function App() {
         case 'import':
           return <ImportDataPage onDataProcessed={handleDataProcessed} />;
         case 'netPurchases':
-          return <NetPurchasesPage data={processedData?.netPurchases} />;
+          return <NetPurchasesPage data={processedData?.netPurchases} allReportsData={allReportsData} />;
         case 'netSales':
-          return <NetSalesPage data={processedData?.netSales} />;
+          return <NetSalesPage data={processedData?.netSales} allReportsData={allReportsData} />;
         case 'physicalInventory':
-          return <PhysicalInventoryPage data={processedData?.physicalInventory} />;
+          return <PhysicalInventoryPage data={processedData?.physicalInventory} allReportsData={allReportsData} />;
         case 'endingInventory':
-          return <EndingInventoryPage data={processedData?.endingInventory} />;
+          return <EndingInventoryPage data={processedData?.endingInventory} allReportsData={allReportsData} />;
         case 'bookInventory':
-          return <BookInventoryPage data={processedData?.bookInventory} />;
+          return <BookInventoryPage data={processedData?.bookInventory} allReportsData={allReportsData} />;
         case 'salesCost':
-          return <SalesCostPage data={processedData?.salesCost} />;
+          return <SalesCostPage data={processedData?.salesCost} allReportsData={allReportsData} />;
         case 'excessInventory':
-          return <ExcessInventoryPage data={processedData?.excessInventory} />;
+          return <ExcessInventoryPage data={processedData?.excessInventory} allReportsData={allReportsData} />;
         case 'suppliersPayables':
-          return <SuppliersPayablesPage data={processedData?.suppliersPayables} />;
+          return <SuppliersPayablesPage data={processedData?.suppliersPayables} allReportsData={allReportsData} />;
         case 'supplierMovement':
           return <SupplierMovementPage
             data={{
@@ -307,6 +307,7 @@ function App() {
               endingInventoryList: processedData?.endingInventory?.endingInventoryList,
               excessInventory: processedData?.excessInventory,
             }}
+            allReportsData={allReportsData}
           />;
         default:
           return null;

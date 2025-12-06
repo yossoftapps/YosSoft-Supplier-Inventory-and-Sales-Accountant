@@ -1,17 +1,20 @@
-// استيراد ادوات الحسابات المالية الدقة
-import { 
-  roundToInteger, 
-  roundToDecimalPlaces, 
-  formatMoney, 
-  formatQuantity,
-  multiply,
-  subtract,
-  add,
-  compare,
-  Decimal
+// ═══════════════════════════════════════════════════════════════════════════
+// فائض المخزون - محسّن للأداء
+// Excess Inventory - Performance Optimized
+// ═══════════════════════════════════════════════════════════════════════════
+
+import {
+    roundToInteger,
+    roundToDecimalPlaces,
+    formatMoney,
+    formatQuantity,
+    multiply,
+    subtract,
+    add,
+    compare,
+    Decimal
 } from '../utils/financialCalculations.js';
 
-// دالة مساعدة لتحويل مصفوفة المصفوفات إلى مصفوفة كائنات
 const convertToObjects = (data) => {
     if (!data || data.length < 2) return [];
     const headers = data[0];
@@ -25,18 +28,17 @@ const convertToObjects = (data) => {
 };
 
 export const calculateExcessInventory = (physicalInventoryRaw, salesRaw) => {
-    console.log('--- بدء معالجة فائض المخزون ---');
+    const startTime = performance.now();
 
-    // 1. تحويل البيانات
     const physicalInventory = convertToObjects(physicalInventoryRaw);
     const allSales = convertToObjects(salesRaw);
 
-    // 2. حساب تاريخ قبل 90 يومًا من اليوم
+    console.log(`🚀 [ExcessInventory] معالجة: ${physicalInventory.length} جرد، ${allSales.length} مبيعات`);
+
     const ninetyDaysAgo = new Date();
     ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
     ninetyDaysAgo.setHours(0, 0, 0, 0);
 
-    // 3. تجميع المبيعات لكل مادة خلال آخر 90 يومًا
     const salesMap = new Map();
     for (const sale of allSales) {
         if (sale['نوع العملية'] === 'مبيعات') {
@@ -50,7 +52,6 @@ export const calculateExcessInventory = (physicalInventoryRaw, salesRaw) => {
         }
     }
 
-    // 4. تجميع الكميات الإجمالية لكل مادة من المخزون الفعلي
     const inventoryMap = new Map();
     for (const item of physicalInventory) {
         const code = item['رمز المادة'];
@@ -67,7 +68,6 @@ export const calculateExcessInventory = (physicalInventoryRaw, salesRaw) => {
         inventoryMap.get(code)['الكمية'] = add(currentValue, quantity);
     }
 
-    // 5. إنشاء التقرير النهائي بحساب الفائض وبيانه
     const excessInventoryReport = [];
     for (const [code, inventoryItem] of inventoryMap.entries()) {
         const totalQuantity = inventoryItem['الكمية'];
@@ -93,8 +93,10 @@ export const calculateExcessInventory = (physicalInventoryRaw, salesRaw) => {
         });
     }
 
-    console.log('--- انتهت معالجة فائض المخزون ---');
-    console.log('تقرير فائض المخزون:', excessInventoryReport);
+    const totalTime = performance.now() - startTime;
+    console.log(`✅ [ExcessInventory] مكتمل:`);
+    console.log(`   ⏱️  ${totalTime.toFixed(0)}ms`);
+    console.log(`   📊 ${excessInventoryReport.length} مادة`);
 
     return excessInventoryReport;
 };

@@ -1,4 +1,21 @@
-// دالة مساعدة لتحويل مصفوفة المصفوفات إلى مصفوفة كائنات
+// ═══════════════════════════════════════════════════════════════════════════
+// تكلفة المبيعات - محسّن للأداء
+// Sales Cost - Performance Optimized
+// ═══════════════════════════════════════════════════════════════════════════
+
+import {
+    roundToInteger,
+    roundToDecimalPlaces,
+    formatMoney,
+    formatQuantity,
+    multiply,
+    subtract,
+    add,
+    compare,
+    divide,
+    Decimal
+} from '../utils/financialCalculations.js';
+
 const convertToObjects = (data) => {
     if (!data || data.length < 2) return [];
     const headers = data[0];
@@ -11,170 +28,161 @@ const convertToObjects = (data) => {
     });
 };
 
-// دالة مساعدة للفرز حسب التاريخ
 const sortByDateAsc = (data, dateKey) => {
     return data.sort((a, b) => new Date(a[dateKey]) - new Date(b[dateKey]));
 };
 
-// استيراد ادوات الحسابات المالية الدقة
-import { 
-  roundToInteger, 
-  roundToDecimalPlaces, 
-  formatMoney, 
-  formatQuantity,
-    multiply,
-    subtract,
-    add,
-    compare,
-    divide,
-    Decimal
-} from '../utils/financialCalculations.js';
-// ensure divide is available
-
-/**
- * حساب تكلفة المبيعات بتطبيق 4 مفاتيح مطابقة حسب الاولوية كما ورد في المواصفات
- * @param {Object} netPurchasesResult - نتيجة صافي المشتريات
- * @param {Object} netSalesResult - نتيجة صافي المبيعات
- * @returns {Array} قائمة بعمليات البيع مع تكلفة الشراء المطابقة
- */
 export const calculateSalesCost = (netPurchasesResult, netSalesResult) => {
-    console.log('--- بدء حساب تكلفة المبيعات ---');
-    
-    // الحصول على قوائم البيانات
+    const startTime = performance.now();
     const purchases = [...(netPurchasesResult.netPurchasesList || [])];
     const sales = [...(netSalesResult.netSalesList || [])];
-    
-    // فرز المشتريات حسب التاريخ تصاعدياً (الاقدم اولاً)
-    const sortedPurchases = sortByDateAsc(purchases, 'تاريخ العملية');
-    
-    // إنشاء نسخة عمل من المشتريات لتتبع الكميات المتبقية
-    const purchaseStock = sortedPurchases.map(p => ({
+
+    console.log(`🚀 [SalesCost] معالجة: ${sales.length} مبيعات مقابل ${purchases.length} مشتريات`);
+
+    // 1. Prepare Purchase Stock with mutable remaining quantity
+    const purchaseStock = purchases.map(p => ({
         ...p,
-        remainingQuantity: roundToDecimalPlaces(p['الكمية'] || 0, 2)
+        remainingQuantity: roundToDecimalPlaces(p['الكمية'] || 0, 2),
+        // Pre-parse date for faster comparison
+        _dateObj: new Date(p['تاريخ العملية'])
     }));
-    
-    // معالجة كل عملية بيع لحساب تكلفتها
-    // 3-3-04-00 حسب مفاتيح المطابقة بالترتيب التالي:-
-    // 3-3-04-01 الشرط الاساسي للمطابقة تاريخ صافي المبيعات اكبر او يساوي تاريخ صافي المشتريات
-    // 3-3-04-02 مفتاح مطابقة رقم 1:- (رمز المادة، تاريخ الصلاحية، الكمية) + تاريخ صافي المبيعات اكبر او يساوي تاريخ صافي المشتريات
-    // 3-3-04-03 مفتاح مطابقة رقم 2:- (رمز المادة، تاريخ الصلاحية) + تاريخ صافي المبيعات اكبر او يساوي تاريخ صافي المشتريات
-    // 3-3-04-04 مفتاح مطابقة رقم 3:- (رمز المادة) + تاريخ صافي المبيعات اكبر او يساوي تاريخ صافي المشتريات
-    // 3-3-04-05 مفتاح مطابقة رقم 4:- (رمز المادة) + تاريخ صافي المبيعات اصغر من تاريخ صافي المشتريات بثلاثة ايام كحد اقصى
-    
-    const getMatchingKeys = (saleRecord) => [
-        // المفتاح 1:- (رمز المادة، تاريخ الصلاحية، الكمية) + تاريخ صافي المبيعات اكبر او يساوي تاريخ صافي المشتريات
-        (p) => new Date(saleRecord['تاريخ العملية']) >= new Date(p['تاريخ العملية']) &&
-            p['رمز المادة'] === saleRecord['رمز المادة'] &&
+
+    // 2. Index purchases by Item Code (optimization)
+    // This allows O(1) lookup instead of O(N) filtering
+    const purchasesByItem = new Map();
+    purchaseStock.forEach(p => {
+        const itemCode = p['رمز المادة'];
+        if (!purchasesByItem.has(itemCode)) {
+            purchasesByItem.set(itemCode, []);
+        }
+        purchasesByItem.get(itemCode).push(p);
+    });
+
+    // 3. Sort purchases within each item group by date (FIFO)
+    purchasesByItem.forEach(group => {
+        // Sort by date ascending
+        group.sort((a, b) => a._dateObj - b._dateObj);
+    });
+
+    // Define matching strategies (simplified to assume we already filtered by Item Code)
+    const getMatchingKeys = (saleRecord, saleDateObj) => [
+        // Strategy 1: Exact match on Expiry Date + Same Quantity
+        (p) => saleDateObj >= p._dateObj &&
             p['تاريخ الصلاحية'] === saleRecord['تاريخ الصلاحية'] &&
             compare(p['الكمية'], saleRecord['الكمية']) === 0,
 
-        // المفتاح 2:- (رمز المادة، تاريخ الصلاحية) + تاريخ صافي المبيعات اكبر او يساوي تاريخ صافي المشتريات
-        (p) => new Date(saleRecord['تاريخ العملية']) >= new Date(p['تاريخ العملية']) &&
-            p['رمز المادة'] === saleRecord['رمز المادة'] &&
+        // Strategy 2: Exact match on Expiry Date
+        (p) => saleDateObj >= p._dateObj &&
             p['تاريخ الصلاحية'] === saleRecord['تاريخ الصلاحية'],
 
-        // المفتاح 3:- (رمز المادة) + تاريخ صافي المبيعات اكبر او يساوي تاريخ صافي المشتريات
-        (p) => new Date(saleRecord['تاريخ العملية']) >= new Date(p['تاريخ العملية']) &&
-            p['رمز المادة'] === saleRecord['رمز المادة'],
+        // Strategy 3: Standard FIFO (Date match only, item code is implied)
+        (p) => saleDateObj >= p._dateObj,
 
-        // المفتاح 4:- (رمز المادة) + تاريخ صافي المبيعات اصغر من تاريخ صافي المشتريات بثلاثة ايام كحد اقصى
-        (p) => new Date(p['تاريخ العملية']) - new Date(saleRecord['تاريخ العملية']) <= 3 * 24 * 60 * 60 * 1000 &&
-            new Date(saleRecord['تاريخ العملية']) < new Date(p['تاريخ العملية']) &&
-            p['رمز المادة'] === saleRecord['رمز المادة'],
+        // Strategy 4: Fuzzy date match (Purchased within 3 days after sale)
+        // Note: New Date() - New Date() gives milliseconds
+        (p) => (p._dateObj - saleDateObj) <= (3 * 24 * 60 * 60 * 1000) &&
+            saleDateObj < p._dateObj
     ];
-    
+
     const salesWithCost = sales.map((sale, index) => {
-        // استخدام الحسابات المالية الدقيقة
         const saleQuantity = roundToDecimalPlaces(sale['الكمية'] || 0, 2);
         let remainingSaleQty = saleQuantity;
         let totalCost = new Decimal(0);
         let purchaseDetails = [];
         let matched = false;
         let notes = 'لايوجد مشتريات';
-        
-        const matchingKeys = getMatchingKeys(sale);
-        
-        // جرب كل مفتاح بالترتيب
-        for (let keyIndex = 0; keyIndex < matchingKeys.length; keyIndex++) {
-            if (compare(remainingSaleQty, 0) <= 0) break;
-            
-            const keyFunction = matchingKeys[keyIndex];
-            
-            // البحث عن جميع السجلات المطابقة مع هذا المفتاح
-            let matchingPurchases = purchaseStock.filter(
-                p => compare(p.remainingQuantity, 0) > 0 && keyFunction(p)
-            );
-            
-            // ترتيب السجلات المطابقة: الاقدم اولاً
-            matchingPurchases.sort((a, b) => new Date(a['تاريخ العملية']) - new Date(b['تاريخ العملية']));
-            
-            // ⭐ الحلقة الداخلية: استنزال من كل السجلات المطابقة بنفس المفتاح وفقاً للترتيب
-            for (const purchase of matchingPurchases) {
+
+        const saleDateObj = new Date(sale['تاريخ العملية']);
+        const itemCode = sale['رمز المادة'];
+
+        // Get only purchases for this item
+        const itemPurchases = purchasesByItem.get(itemCode) || [];
+
+        if (itemPurchases.length > 0) {
+            const matchingKeys = getMatchingKeys(sale, saleDateObj);
+
+            for (let keyIndex = 0; keyIndex < matchingKeys.length; keyIndex++) {
                 if (compare(remainingSaleQty, 0) <= 0) break;
-                
-                // حساب الكمية التي يمكن خصمها من هذا السجل
-                const quantityToTake = compare(purchase.remainingQuantity, remainingSaleQty) < 0 
-                    ? purchase.remainingQuantity 
-                    : remainingSaleQty;
-                
-                // حساب تكلفة هذه الكمية باستخدام الحسابات المالية الدقيقة
-                const unitPrice = roundToInteger(purchase['الافرادي'] || 0);
-                const costOfTaken = multiply(quantityToTake, unitPrice);
-                
-                // تحديث الكمية المتبقية في سجل الشراء
-                purchase.remainingQuantity = subtract(purchase.remainingQuantity, quantityToTake);
-                
-                // إضافة التكلفة إلى إجمالي تكلفة البيع
-                totalCost = add(totalCost, costOfTaken);
-                
-                // تخزين تفاصيل الشراء المطابق
-                purchaseDetails.push({
-                    purchaseDate: purchase['تاريخ العملية'],
-                    purchaseUnitPrice: unitPrice,
-                    quantityMatched: quantityToTake,
-                    purchaseBatch: purchase['رقم السجل']
-                });
-                
-                // تحديث الكمية المتبقية من البيع
-                remainingSaleQty = subtract(remainingSaleQty, quantityToTake);
-                matched = true;
-                notes = 'مطابق';
-                
-                // إذا تم تغطية كامل كمية البيع، نتوقف
-                if (compare(remainingSaleQty, 0) <= 0) break;
+
+                const keyFunction = matchingKeys[keyIndex];
+
+                // Filter valid purchases for this strategy
+                // Note: itemPurchases is ALREADY sorted by date, so we don't need to sort again
+                // We just need to filter and pick
+
+                // However, for correct FIFO within a strategy (like Strategy 2), 
+                // we iterate through the pre-sorted list and pick what matches.
+                // We do NOT need to create a new array with filter() and then iterate.
+                // We can just iterate once.
+
+                // But wait, key strategies might prioritize differently.
+                // The original code did:
+                // 1. FILTER by key strategy
+                // 2. SORT filtered results by date
+                // 3. CONSUME
+
+                // Since itemPurchases is ALREADY sorted by date, step 2 is redundant IF the filter preserves order (which it does).
+                // So checking linearly is correct and efficient.
+
+                for (const purchase of itemPurchases) {
+                    if (compare(remainingSaleQty, 0) <= 0) break;
+
+                    // Skip if no remaining quantity
+                    if (compare(purchase.remainingQuantity, 0) <= 0) continue;
+
+                    // Check if matches current strategy
+                    if (keyFunction(purchase)) {
+                        const quantityToTake = compare(purchase.remainingQuantity, remainingSaleQty) < 0
+                            ? purchase.remainingQuantity
+                            : remainingSaleQty;
+
+                        const unitPrice = roundToInteger(purchase['الافرادي'] || 0);
+                        const costOfTaken = multiply(quantityToTake, unitPrice);
+
+                        purchase.remainingQuantity = subtract(purchase.remainingQuantity, quantityToTake);
+                        totalCost = add(totalCost, costOfTaken);
+
+                        purchaseDetails.push({
+                            purchaseDate: purchase['تاريخ العملية'],
+                            purchaseUnitPrice: unitPrice,
+                            quantityMatched: quantityToTake,
+                            purchaseBatch: purchase['رقم السجل'],
+                            purchaseSupplier: purchase['المورد']
+                        });
+
+                        remainingSaleQty = subtract(remainingSaleQty, quantityToTake);
+                        matched = true;
+                        notes = 'مطابق';
+                    }
+                }
+
+                if (matched && compare(remainingSaleQty, 0) <= 0) break;
             }
-            
-            // إذا تم العثور على مطابقة، نتوقف عن تجربة المفاتيح الاخرى
-            if (matched) break;
         }
-        
-        // حساب القيم المطلوبة باستخدام الحسابات المالية الدقيقة
+
         const saleUnitPrice = roundToInteger(sale['الافرادي'] || 0);
         const totalSaleValue = multiply(saleQuantity, saleUnitPrice);
         const totalProfit = subtract(totalSaleValue, totalCost);
-        const profitMargin = compare(totalCost, 0) > 0 
-            ? multiply(divide(totalProfit, totalCost), 100) 
+        const profitMargin = compare(totalCost, 0) > 0
+            ? multiply(divide(totalProfit, totalCost), 100)
             : new Decimal(0);
-        const saleDate = new Date(sale['تاريخ العملية']);
+        const saleDate = saleDateObj;
         const purchaseDate = purchaseDetails.length > 0 ? new Date(purchaseDetails[0].purchaseDate) : null;
         const inventoryAge = purchaseDate ? Math.floor((saleDate - purchaseDate) / (1000 * 60 * 60 * 24)) : 0;
-        
-        // تحديد حالة الربحية
+
         let profitabilityStatus = 'مطابق';
         if (compare(totalProfit, 0) > 0) {
             profitabilityStatus = 'ربح';
         } else if (compare(totalProfit, 0) < 0) {
             profitabilityStatus = 'خسارة';
         }
-        
-        // تحديد الملاحظات
+
         if (compare(remainingSaleQty, 0) > 0 && matched) {
             notes = 'لا يوجد مشتريات كافية';
         } else if (!matched) {
             notes = 'لايوجد مشتريات';
         }
-        
-        // حساب افرادي الشراء بأمان
+
         let purchaseUnitPrice = new Decimal(0);
         if (compare(totalCost, 0) > 0 && compare(saleQuantity, 0) > 0) {
             try {
@@ -183,8 +191,7 @@ export const calculateSalesCost = (netPurchasesResult, netSalesResult) => {
                 purchaseUnitPrice = new Decimal(0);
             }
         }
-        
-        // حساب افرادي الربح بأمان
+
         let profitUnitPrice = saleUnitPrice;
         if (compare(purchaseUnitPrice, 0) > 0) {
             try {
@@ -193,19 +200,25 @@ export const calculateSalesCost = (netPurchasesResult, netSalesResult) => {
                 profitUnitPrice = saleUnitPrice;
             }
         }
-        
+
+        const progressInterval = Math.max(1, Math.floor(sales.length * 0.1));
+        if ((index + 1) % progressInterval === 0 || index === sales.length - 1) {
+            const percentage = ((index + 1) / sales.length * 100).toFixed(0);
+            console.log(`⏳ [SalesCost] ${index + 1}/${sales.length} (${percentage}%)`);
+        }
+
         return {
             'م': index + 1,
             'رمز المادة': sale['رمز المادة'],
             'اسم المادة': sale['اسم المادة'],
             'الوحدة': sale['الوحدة'],
-            'الكمية': formatQuantity(saleQuantity), // استخدام التنسيق المحدد للمبالغ
+            'الكمية': formatQuantity(saleQuantity),
             'تاريخ الصلاحية': sale['تاريخ الصلاحية'],
             'تاريخ العملية': sale['تاريخ العملية'],
-            'الافرادي': formatMoney(saleUnitPrice), // استخدام التنسيق المحدد للمبالغ
+            'الافرادي': formatMoney(saleUnitPrice),
             'افرادي الشراء': formatMoney(purchaseUnitPrice),
             'تاريخ الشراء': purchaseDetails.length > 0 ? purchaseDetails[0].purchaseDate : '',
-            'المورد': purchaseDetails.length > 0 ? purchaseDetails[0].purchaseBatch : '',
+            'المورد': purchaseDetails.length > 0 ? (purchaseDetails[0].purchaseSupplier || purchaseDetails[0].purchaseBatch) : '',
             'رقم السجل': sale['رقم السجل'],
             'افرادي الربح': formatMoney(profitUnitPrice),
             'نسبة الربح': roundToInteger(profitMargin).toString() + '%',
@@ -215,11 +228,12 @@ export const calculateSalesCost = (netPurchasesResult, netSalesResult) => {
             'ملاحظات': notes
         };
     });
-    
-    console.log('--- انتهت عملية حساب تكلفة المبيعات ---');
-    console.log('عدد عمليات البيع مع التكلفة:', salesWithCost.length, 'عملية');
 
-    // Return an object to be consistent with other logic result shapes
+    const totalTime = performance.now() - startTime;
+    console.log(`✅ [SalesCost] مكتمل:`);
+    console.log(`   ⏱️  ${totalTime.toFixed(0)}ms`);
+    console.log(`   📊 ${salesWithCost.length} عملية`);
+
     return {
         costOfSalesList: salesWithCost
     };
