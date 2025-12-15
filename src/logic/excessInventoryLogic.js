@@ -27,13 +27,35 @@ const convertToObjects = (data) => {
     });
 };
 
-export const calculateExcessInventory = (physicalInventoryRaw, salesRaw) => {
+export const calculateExcessInventory = (physicalInventoryRaw, salesRaw, netPurchasesList, netSalesList) => {
     const startTime = performance.now();
 
     const physicalInventory = convertToObjects(physicalInventoryRaw);
     const allSales = convertToObjects(salesRaw);
 
     console.log(`🚀 [ExcessInventory] معالجة: ${physicalInventory.length} جرد، ${allSales.length} مبيعات`);
+
+    // خارطة لتجميع كميات المشتريات (صافي المشتريات المدمج: A + D)
+    const purchasesMap = new Map();
+    if (netPurchasesList) {
+        netPurchasesList.forEach(item => {
+            const code = item['رمز المادة'];
+            const qty = roundToDecimalPlaces(item['الكمية'] || 0, 2);
+            const current = purchasesMap.get(code) || new Decimal(0);
+            purchasesMap.set(code, add(current, qty));
+        });
+    }
+
+    // خارطة لتجميع كميات المبيعات (صافي المبيعات المدمج: C + B + F)
+    const netSalesMap = new Map();
+    if (netSalesList) {
+        netSalesList.forEach(item => {
+            const code = item['رمز المادة'];
+            const qty = roundToDecimalPlaces(item['الكمية'] || 0, 2);
+            const current = netSalesMap.get(code) || new Decimal(0);
+            netSalesMap.set(code, add(current, qty));
+        });
+    }
 
     const ninetyDaysAgo = new Date();
     ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
@@ -71,8 +93,16 @@ export const calculateExcessInventory = (physicalInventoryRaw, salesRaw) => {
     const excessInventoryReport = [];
     for (const [code, inventoryItem] of inventoryMap.entries()) {
         const totalQuantity = inventoryItem['الكمية'];
-        const totalSales = salesMap.get(code) || new Decimal(0);
+        const totalSales = salesMap.get(code) || new Decimal(0); // This is 90-days sales
+        const totalPurchases = purchasesMap.get(code) || new Decimal(0);
+        const totalNetSales = netSalesMap.get(code) || new Decimal(0);
+
         const excess = subtract(totalQuantity, totalSales);
+
+        // إذا كانت الكمية صفر والمبيعات صفر، يتم تجاهل السجل
+        if (compare(totalQuantity, 0) === 0 && compare(totalSales, 0) === 0) {
+            continue;
+        }
 
         let statusText = '';
         if (compare(totalSales, 0) === 0 && compare(totalQuantity, 0) > 0) {
@@ -85,10 +115,55 @@ export const calculateExcessInventory = (physicalInventoryRaw, salesRaw) => {
             statusText = 'مناسب';
         }
 
+        // حساب نسبة الفائض (Excess Percentage)
+        let excessPercentage = -100;
+        if (compare(totalQuantity, 0) !== 0) {
+            // (Excess / TotalQuantity) * 100
+            try {
+                const ratio = excess.div(totalQuantity);
+                excessPercentage = roundToInteger(multiply(ratio, 100)).toNumber();
+            } catch (e) {
+                excessPercentage = 0;
+            }
+        }
+
+        // حساب نسبة المبيعات (Sales Percentage)
+        let salesPercentage = 0;
+        if (compare(totalPurchases, 0) === 0) {
+            salesPercentage = 100;
+        } else {
+            try {
+                const ratio = totalNetSales.div(totalPurchases);
+                salesPercentage = roundToInteger(multiply(ratio, 100)).toNumber();
+            } catch (e) {
+                salesPercentage = 0;
+            }
+        }
+
+        // حساب معد للارجاع
+        let preparedForReturn = new Decimal(0);
+        if (compare(excess, 0) > 0) {
+            preparedForReturn = roundToInteger(excess);
+        }
+
+        // حساب الاحتياج
+        let needQuantity = new Decimal(0);
+        if (compare(excess, 0) < 0) {
+            // Excess is negative (e.g., -5.2). Round to -5. Abs is 5.
+            // Or Round(-5.2) -> -5. Abs(-5) -> 5.
+            needQuantity = roundToInteger(excess).abs();
+        }
+
         excessInventoryReport.push({
             ...inventoryItem,
+            'كمية المشتريات': totalPurchases,
+            'كمية المبيعات': totalNetSales,
+            'نسبة المبيعات': salesPercentage + '%',
             'المبيعات': totalSales,
             'فائض المخزون': excess,
+            'نسبة الفائض': excessPercentage + '%',
+            'معد للارجاع': preparedForReturn,
+            'الاحتياج': needQuantity,
             'بيان الفائض': statusText,
         });
     }

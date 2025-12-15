@@ -1,15 +1,23 @@
-import React from 'react';
-import { Typography, Table, Alert, Tag } from 'antd';
+import React, { useMemo, useState } from 'react';
+import { Tag, Table } from 'antd';
 import { formatQuantity, formatMoney } from '../utils/financialCalculations.js';
-import PrintExportButtons from '../components/PrintExportButtons';
+import { filterGenericData } from '../utils/dataFilter.js';
+import UnifiedPageLayout from '../components/UnifiedPageLayout';
+import UnifiedTable from '../components/UnifiedTable';
+import UnifiedAlert from '../components/UnifiedAlert';
 
-const { Title } = Typography;
+function ExcessInventoryPage({ data, allReportsData }) {
+    const [filters, setFilters] = useState({});
 
-function ExcessInventoryPage({ data }) {
+    // Apply filters
+    const filteredData = useMemo(() => {
+        return filterGenericData(data, filters);
+    }, [data, filters]);
+
     if (!data) {
         return (
-            <div style={{ padding: '20px' }}>
-                <Alert message="لا توجد بيانات" description="يرجى استيراد ملف Excel اولاً لمعالجة البيانات." type="info" showIcon />
+            <div className="padding-lg">
+                <UnifiedAlert message="لا توجد بيانات للعرض" description="يرجى استيراد البيانات ومعالجتها أولاً" />
             </div>
         );
     }
@@ -35,6 +43,18 @@ function ExcessInventoryPage({ data }) {
             render: (text) => formatQuantity(text)
         },
         {
+            title: 'كمية المشتريات', dataIndex: 'كمية المشتريات', key: 'كمية المشتريات', width: 100, align: 'left',
+            render: (text) => formatQuantity(text)
+        },
+        {
+            title: 'كمية المبيعات', dataIndex: 'كمية المبيعات', key: 'كمية المبيعات', width: 100, align: 'left',
+            render: (text) => formatQuantity(text)
+        },
+        {
+            title: 'نسبة المبيعات', dataIndex: 'نسبة المبيعات', key: 'نسبة المبيعات', width: 90, align: 'center',
+            render: (text) => text // Already formatted as string with %
+        },
+        {
             title: 'المبيعات (90 يوم)', dataIndex: 'المبيعات', key: 'المبيعات', width: 120, align: 'left',
             render: (text) => formatQuantity(text)
         },
@@ -46,56 +66,91 @@ function ExcessInventoryPage({ data }) {
             }
         },
         {
+            title: 'نسبة الفائض', dataIndex: 'نسبة الفائض', key: 'نسبة الفائض', width: 100, align: 'center',
+            render: (text) => {
+                const val = parseInt(text) || 0;
+                return <span style={{ color: val < 0 ? 'orange' : (val > 0 ? '#1890ff' : 'green') }}>{text}</span>
+            }
+        },
+        {
+            title: 'معد للارجاع', dataIndex: 'معد للارجاع', key: 'معد للارجاع', width: 110, align: 'left',
+            render: (text) => {
+                const value = parseFloat(text) || 0;
+                return <strong>{formatQuantity(value)}</strong>
+            }
+        },
+        {
+            title: 'الاحتياج', dataIndex: 'الاحتياج', key: 'الاحتياج', width: 110, align: 'left',
+            render: (text) => {
+                const value = parseFloat(text) || 0;
+                return <strong style={{ color: value > 0 ? '#cf1322' : 'inherit' }}>{formatQuantity(value)}</strong>
+            }
+        },
+        {
             title: 'بيان الفائض', dataIndex: 'بيان الفائض', key: 'بيان الفائض', width: 120, align: 'center',
             render: (text) => <Tag color={getTagColor(text)}>{text}</Tag>
         },
     ];
 
+    // Calculate totals for summary (based on FILTERED data)
+    const totalQuantity = filteredData.reduce((sum, record) => sum + parseFloat(record['الكمية'] || 0), 0);
+    const totalPurchaseQuantity = filteredData.reduce((sum, record) => sum + parseFloat(record['كمية المشتريات'] || 0), 0);
+    const totalSalesQuantity = filteredData.reduce((sum, record) => sum + parseFloat(record['كمية المبيعات'] || 0), 0);
+    const totalSales = filteredData.reduce((sum, record) => sum + parseFloat(record['المبيعات'] || 0), 0);
+    const totalExcess = filteredData.reduce((sum, record) => sum + parseFloat(record['فائض المخزون'] || 0), 0);
+    const totalReturns = filteredData.reduce((sum, record) => sum + parseFloat(record['معد للارجاع'] || 0), 0);
+    const totalNeed = filteredData.reduce((sum, record) => sum + parseFloat(record['الاحتياج'] || 0), 0);
+
     return (
-        <div style={{ padding: '20px' }}>
-            <Title level={4}>تقرير فائض المخزون</Title>
-            <p>حساب الفارق بين إجمالي الكميات في المخزون والمبيعات خلال آخر 90 يومًا.</p>
-
-            {/* Print/Export buttons */}
-            <PrintExportButtons 
-                data={data}
-                title="تقرير فائض المخزون"
-                columns={columns}
-                filename="excess-inventory"
-            />
-
-            <Table
-                title={() => <strong>تحليل فائض المخزون ({data.length} صنف)</strong>}
-                dataSource={data}
+        <UnifiedPageLayout
+            title="تقرير فائض المخزون"
+            description="حساب الفارق بين إجمالي الكميات في المخزون والمبيعات خلال آخر 90 يومًا."
+            data={filteredData}
+            columns={columns}
+            filename="excess-inventory"
+            allReportsData={allReportsData}
+            filterData={data}
+            filterDataType="default"
+            onFilterChange={setFilters}
+        >
+            <UnifiedTable
+                dataSource={filteredData}
                 columns={columns}
                 rowKey="رمز المادة"
-                scroll={{ x: 900 }}
-                pagination={{ pageSize: 25 }}
+                title={`تحليل فائض المخزون (${filteredData.length} صنف)`}
                 summary={() => (
                     <Table.Summary.Row>
                         <Table.Summary.Cell index={0} colSpan={3}>
-                            <strong>الإجمالي الكلي</strong>
+                            <strong className="unified-table-summary">الإجمالي الكلي</strong>
                         </Table.Summary.Cell>
                         <Table.Summary.Cell index={3}>
-                            <strong>
-                                {formatQuantity(data.reduce((sum, record) => sum + parseFloat(record['الكمية'] || 0), 0))}
-                            </strong>
+                            <strong className="unified-table-summary">{formatQuantity(totalQuantity)}</strong>
                         </Table.Summary.Cell>
                         <Table.Summary.Cell index={4}>
-                            <strong>
-                                {formatQuantity(data.reduce((sum, record) => sum + parseFloat(record['المبيعات'] || 0), 0))}
-                            </strong>
+                            <strong className="unified-table-summary">{formatQuantity(totalPurchaseQuantity)}</strong>
                         </Table.Summary.Cell>
                         <Table.Summary.Cell index={5}>
-                            <strong>
-                                {formatQuantity(data.reduce((sum, record) => sum + parseFloat(record['فائض المخزون'] || 0), 0))}
-                            </strong>
+                            <strong className="unified-table-summary">{formatQuantity(totalSalesQuantity)}</strong>
                         </Table.Summary.Cell>
                         <Table.Summary.Cell index={6}></Table.Summary.Cell>
+                        <Table.Summary.Cell index={7}>
+                            <strong className="unified-table-summary">{formatQuantity(totalSales)}</strong>
+                        </Table.Summary.Cell>
+                        <Table.Summary.Cell index={8}>
+                            <strong className="unified-table-summary">{formatQuantity(totalExcess)}</strong>
+                        </Table.Summary.Cell>
+                        <Table.Summary.Cell index={9}></Table.Summary.Cell>
+                        <Table.Summary.Cell index={10}>
+                            <strong className="unified-table-summary">{formatQuantity(totalReturns)}</strong>
+                        </Table.Summary.Cell>
+                        <Table.Summary.Cell index={11}>
+                            <strong className="unified-table-summary">{formatQuantity(totalNeed)}</strong>
+                        </Table.Summary.Cell>
+                        <Table.Summary.Cell index={12}></Table.Summary.Cell>
                     </Table.Summary.Row>
                 )}
             />
-        </div>
+        </UnifiedPageLayout>
     );
 }
 

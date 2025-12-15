@@ -1,20 +1,17 @@
 /**
  * نظام الفهرسة المتقدم للبيانات الكبيرة
- * Advanced Indexing System for Large Datasets
  * 
  * يوفر فهرسة O(1) للبحث السريع بدلاً من O(n) الخطي
- * Provides O(1) index lookup instead of O(n) linear search
  * 
  * الميزات:
- * - فهرسة متعددة المفاتيح (Multi-key indexing)
- * - فهرسة مركبة (Composite indexing)
+ * - فهرسة متعددة المفاتيح 
+ * - فهرسة مركبة 
  * - تحديث ديناميكي للفهارس
  * - استهلاك ذاكرة محسّن
  */
 
 /**
  * مدير الفهارس الرئيسي
- * Main Index Manager
  */
 export class AdvancedIndexer {
     constructor() {
@@ -63,7 +60,6 @@ export class AdvancedIndexer {
 
     /**
      * بناء جميع الفهارس من البيانات
-     * Build all indexes from data
      */
     buildIndexes(records, recordType = 'default') {
         const startTime = performance.now();
@@ -92,7 +88,6 @@ export class AdvancedIndexer {
 
     /**
      * فهرسة سجل واحد
-     * Index a single record
      */
     indexRecord(record, index) {
         const materialCode = record['رمز المادة'];
@@ -122,7 +117,6 @@ export class AdvancedIndexer {
 
     /**
      * بناء الفهارس المركبة لجميع المفاتيح
-     * Build composite indexes for all keys
      */
     buildCompositeIndexes(record, index) {
         const materialCode = record['رمز المادة'];
@@ -167,7 +161,6 @@ export class AdvancedIndexer {
 
     /**
      * إنشاء مفتاح مركب من عدة قيم
-     * Create composite key from multiple values
      */
     createCompositeKey(values) {
         return values
@@ -177,7 +170,6 @@ export class AdvancedIndexer {
 
     /**
      * إضافة فهرس لقيمة معينة
-     * Add index for a specific value
      */
     addToIndex(indexMap, key, recordIndex) {
         if (key === null || key === undefined) return;
@@ -190,7 +182,6 @@ export class AdvancedIndexer {
 
     /**
      * فهرسة الفترات الزمنية
-     * Index date ranges
      */
     indexDateRange(dateStr, index) {
         try {
@@ -204,7 +195,6 @@ export class AdvancedIndexer {
 
     /**
      * البحث باستخدام المفتاح المركب
-     * Search using composite key
      */
     searchByCompositeKey(keyNumber, record) {
         const startTime = performance.now();
@@ -299,7 +289,6 @@ export class AdvancedIndexer {
 
     /**
      * البحث باستخدام فهرس بسيط
-     * Search using simple index
      */
     searchByField(fieldName, value) {
         const indexMap = this.indexes[fieldName];
@@ -309,7 +298,6 @@ export class AdvancedIndexer {
 
     /**
      * البحث في فترة زمنية
-     * Search in date range
      */
     searchByDateRange(fromDate, toDate) {
         const startTime = performance.now();
@@ -335,7 +323,6 @@ export class AdvancedIndexer {
 
     /**
      * البحث المتقدم بمعايير متعددة
-     * Advanced search with multiple criteria
      */
     advancedSearch(criteria) {
         const startTime = performance.now();
@@ -381,7 +368,6 @@ export class AdvancedIndexer {
 
     /**
      * حساب استهلاك الذاكرة التقريبي
-     * Calculate approximate memory usage
      */
     calculateMemoryUsage() {
         let totalSize = 0;
@@ -405,7 +391,6 @@ export class AdvancedIndexer {
 
     /**
      * تقدير حجم Map بالبايت
-     * Estimate Map size in bytes
      */
     estimateMapSize(map) {
         let size = 0;
@@ -420,7 +405,6 @@ export class AdvancedIndexer {
 
     /**
      * مسح جميع الفهارس
-     * Clear all indexes
      */
     clearIndexes() {
         for (const indexMap of Object.values(this.indexes)) {
@@ -434,7 +418,6 @@ export class AdvancedIndexer {
 
     /**
      * الحصول على إحصائيات الأداء
-     * Get performance statistics
      */
     getStats() {
         return {
@@ -451,7 +434,6 @@ export class AdvancedIndexer {
 
     /**
      * طباعة تقرير الأداء
-     * Print performance report
      */
     printPerformanceReport() {
         const stats = this.getStats();
@@ -474,7 +456,6 @@ export class AdvancedIndexer {
 
 /**
  * singleton instance للاستخدام العام
- * Singleton instance for general use
  */
 export const globalIndexer = new AdvancedIndexer();
 

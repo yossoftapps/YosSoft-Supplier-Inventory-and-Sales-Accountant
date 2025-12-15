@@ -48,8 +48,18 @@ export const roundToInteger = (value) => {
  * @returns {string} Formatted string with exactly 2 decimal places
  */
 export const formatQuantity = (value) => {
-  const rounded = roundToDecimalPlaces(value, 2);
-  return rounded.toFixed(2);
+  // Handle undefined or null values
+  if (value === null || value === undefined) {
+    return "0.00";
+  }
+  try {
+    const decimalValue = parseToDecimal(value);
+    const rounded = decimalValue.toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+    return rounded.toFixed(2);
+  } catch (error) {
+    // Fallback to 0 if parsing fails
+    return "0.00";
+  }
 };
 
 /**
@@ -59,9 +69,19 @@ export const formatQuantity = (value) => {
  * @returns {string} Formatted string as integer with thousands separator
  */
 export const formatMoney = (value) => {
-  const rounded = roundToInteger(value);
-  // Add thousands separator for display
-  return rounded.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  // Handle undefined or null values
+  if (value === null || value === undefined) {
+    return "0";
+  }
+  try {
+    const decimalValue = parseToDecimal(value);
+    const rounded = decimalValue.toDecimalPlaces(0, Decimal.ROUND_HALF_UP);
+    // Add thousands separator for display
+    return rounded.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  } catch (error) {
+    // Fallback to 0 if parsing fails
+    return "0";
+  }
 };
 
 /**
@@ -203,6 +223,46 @@ const parseToDecimal = (input) => {
   // Remove common invisible/control characters (UTF control chars)
   s = s.replace(/[\u0000-\u001F\u007F]/g, '');
 
+  // Handle the special case where we have a very long string with many numbers concatenated
+  // This can happen when formatted values are passed back to the parser
+  if (s.length > 50) {
+    // Extract all valid number patterns and take the first reasonable one
+    const numberMatches = s.match(/\d+(\.\d+)?/g);
+    if (numberMatches && numberMatches.length > 0) {
+      // Take the first match that looks reasonable (not too long)
+      for (let i = 0; i < numberMatches.length; i++) {
+        const match = numberMatches[i];
+        if (match.length <= 20) { // Reasonable length for a number
+          s = match;
+          break;
+        }
+      }
+      // If all matches are too long, take the first one anyway
+      if (s === String(input).trim()) {
+        s = numberMatches[0];
+      }
+    }
+  } else {
+    // Normal processing for shorter strings
+    // If the string contains multiple numbers, extract the first valid one
+    const numberMatches = s.match(/[\d.]+/g);
+    if (numberMatches && numberMatches.length > 0) {
+      // Look for the first match that looks like a valid number
+      for (let i = 0; i < numberMatches.length; i++) {
+        const match = numberMatches[i];
+        // Validate that it's a proper number format
+        if (/^\d+(\.\d+)?$/.test(match)) {
+          s = match;
+          break;
+        }
+      }
+      // If no valid format found, use the first match
+      if (s === String(input).trim()) {
+        s = numberMatches[0];
+      }
+    }
+  }
+
   // Convert Arabic-Indic digits (٠-٩) and Eastern Arabic-Indic (۰-۹) to western digits
   s = s.replace(/[\u0660-\u0669]/g, ch => String(ch.charCodeAt(0) - 0x0660));
   s = s.replace(/[\u06F0-\u06F9]/g, ch => String(ch.charCodeAt(0) - 0x06F0));
@@ -223,7 +283,157 @@ const parseToDecimal = (input) => {
   // Remove spaces and apostrophes
   s = s.replace(/[\s']/g, '');
 
+  // Validate that we have a proper number format
+  if (!/^\d+(\.\d+)?$/.test(s)) {
+    // If not a valid number format, try to extract the first valid part
+    const parts = s.split('.');
+    if (parts.length > 1) {
+      // Take the first part as integer and second as decimal
+      const integerPart = parts[0].replace(/\D/g, ''); // Keep only digits
+      const decimalPart = parts[1].replace(/\D/g, ''); // Keep only digits
+      s = integerPart + (decimalPart ? '.' + decimalPart : '');
+    } else {
+      // Just keep digits
+      s = s.replace(/\D/g, '');
+    }
+    // If we ended up with an empty string, use 0
+    if (s === '') s = '0';
+  }
+
   return new Decimal(s);
+};
+
+// Serialize data by converting Decimal objects to plain numbers
+// Enhanced to handle complex data types safely and efficiently
+export const serializeData = (data, seen = new WeakSet(), depth = 0) => {
+  // Prevent deep nesting which can cause performance issues
+  if (depth > 100) {
+    return '[Max Depth Reached]';
+  }
+
+  // Handle null and undefined
+  if (data === null || data === undefined) return data;
+
+  // Handle primitive types
+  if (typeof data !== 'object') return data;
+
+  // Handle Date objects
+  if (data instanceof Date) return data.toISOString();
+
+  // Handle Decimal objects specifically
+  if (data instanceof Decimal) {
+    // For very large or small numbers, use toFixed to prevent scientific notation
+    const num = data.toNumber();
+    if (Math.abs(num) > 1e15 || (Math.abs(num) < 1e-6 && num !== 0)) {
+      return data.toString(); // Keep as string to preserve precision
+    }
+    return num;
+  }
+
+  // Handle Arrays
+  if (Array.isArray(data)) {
+    // For large arrays, process in chunks to avoid blocking
+    if (data.length > 10000) {
+      const result = [];
+      for (let i = 0; i < data.length; i += 1000) {
+        const chunk = data.slice(i, i + 1000);
+        result.push(...chunk.map(item => serializeData(item, seen, depth + 1)));
+      }
+      return result;
+    }
+    return data.map(item => serializeData(item, seen, depth + 1));
+  }
+
+  // Handle Map objects
+  if (data instanceof Map) {
+    const serialized = {};
+    for (const [key, value] of data) {
+      const keyStr = typeof key === 'string' ? key : String(key);
+      serialized[keyStr] = serializeData(value, seen, depth + 1);
+    }
+    return serialized;
+  }
+
+  // Handle Set objects
+  if (data instanceof Set) {
+    return Array.from(data).map(item => serializeData(item, seen, depth + 1));
+  }
+
+  // Handle other object types
+  if (typeof data === 'object') {
+    // Check for circular references
+    if (seen.has(data)) {
+      return '[Circular Reference]';
+    }
+    seen.add(data);
+
+    try {
+      const serialized = {};
+
+      // Handle different types of keys and values
+      const keys = Object.keys(data);
+      
+      // For objects with many keys, process in smaller chunks
+      if (keys.length > 1000) {
+        for (let i = 0; i < keys.length; i += 100) {
+          const chunkKeys = keys.slice(i, i + 100);
+          for (const key of chunkKeys) {
+            try {
+              const value = data[key];
+
+              // Skip functions and symbols
+              if (typeof value === 'function' || typeof value === 'symbol') {
+                continue;
+              }
+
+              // Skip prototype properties
+              if (!data.hasOwnProperty(key)) {
+                continue;
+              }
+
+              // Serialize the value
+              serialized[key] = serializeData(value, seen, depth + 1);
+            } catch (error) {
+              console.warn(`Failed to serialize property ${key}:`, error);
+              serialized[key] = '[Unserializable]';
+            }
+          }
+        }
+      } else {
+        for (const key of keys) {
+          try {
+            const value = data[key];
+
+            // Skip functions and symbols
+            if (typeof value === 'function' || typeof value === 'symbol') {
+              continue;
+            }
+
+            // Skip prototype properties
+            if (!data.hasOwnProperty(key)) {
+              continue;
+            }
+
+            // Serialize the value
+            serialized[key] = serializeData(value, seen, depth + 1);
+          } catch (error) {
+            console.warn(`Failed to serialize property ${key}:`, error);
+            serialized[key] = '[Unserializable]';
+          }
+        }
+      }
+
+      seen.delete(data); // Remove from seen set after processing
+      return serialized;
+    } catch (error) {
+      console.warn('Failed to serialize object:', error);
+      seen.delete(data);
+      return '[Unserializable Object]';
+    }
+  }
+
+  // Return as-is for any other cases
+  return data;
 };
 
 // Export the Decimal class for advanced usage if needed

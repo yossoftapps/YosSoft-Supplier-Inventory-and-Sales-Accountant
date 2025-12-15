@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Button, Typography, Space, Alert, Spin } from 'antd';
+import { Button, Upload, message, Typography, Space, Alert } from 'antd';
+import { UploadOutlined, FileExcelOutlined } from '@ant-design/icons';
 
-// استيراد جميع دوال المنطق
+// استيراد منطق المعالجة
 import { calculateNetPurchases } from '../logic/netPurchasesLogic';
 import { calculateNetSales } from '../logic/netSalesLogic';
 import { processPhysicalInventory } from '../logic/physicalInventoryLogic';
@@ -10,6 +11,11 @@ import { calculateEndingInventory } from '../logic/endingInventoryLogic';
 import { calculateSalesCost } from '../logic/salesCostLogic';
 import { calculateSupplierPayables } from '../logic/supplierPayablesLogic';
 import { calculateBookInventory } from '../logic/bookInventoryLogic';
+import { calculateAbnormalItems } from '../logic/abnormalItemsLogic';
+import { calculateMainAccountsSummary } from '../logic/mainAccountsLogic';
+import { enrichNetPurchases } from '../logic/enrichmentLogic';
+import { checkDataSufficiency } from '../logic/dataSufficiencyChecker';
+import { checkFinancialDataIntegrity } from '../logic/financialIntegrityChecker';
 
 // استيراد اداة التحقق من الصحة
 import { validateAllTables, normalizeData } from '../validator/schemaValidator';
@@ -80,10 +86,29 @@ function ImportDataPage({ onDataProcessed }) {
 
                 if (!validationResults.isValid) {
                     console.error('فشل التحقق من صحة البيانات:', validationResults.errors);
-                    setStatusMessage(`فشل التحقق من صحة البيانات: ${validationResults.errors.join(', ')}`);
-                    setDiagnostics({ validationResults });
-                    setIsLoading(false);
-                    return;
+
+                    // Provide more user-friendly error messages
+                    const userFriendlyErrors = validationResults.errors.map(error => {
+                        if (error.includes('الحساب المساعد')) {
+                            return 'تحذير: عمود "الحساب المساعد" مفقود في بيانات الموردين. سيتم المتابعة مع تجاهل هذا العمود.';
+                        }
+                        return error;
+                    });
+
+                    // Check if the only error is the missing optional column
+                    const isOnlyOptionalColumnMissing = validationResults.errors.length === 1 &&
+                        validationResults.errors[0].includes('الحساب المساعد');
+
+                    // If it's only the optional column missing, we can continue
+                    if (!isOnlyOptionalColumnMissing) {
+                        setStatusMessage(`فشل التحقق من صحة البيانات: ${userFriendlyErrors.join(', ')}`);
+                        setDiagnostics({ validationResults });
+                        setIsLoading(false);
+                        return;
+                    } else {
+                        // Just show a warning but continue processing
+                        setStatusMessage(`تحذير: ${userFriendlyErrors[0]} جاري المتابعة في المعالجة...`);
+                    }
                 }
 
                 console.log('بيانات صالحة، بدء المعالجة');
@@ -116,12 +141,12 @@ function ImportDataPage({ onDataProcessed }) {
                 // --- التحقق من وجود الحقول المالية المطلوبة وصحتها ---
                 const financialDataCheck = checkFinancialDataIntegrity(normalizedData);
                 console.log('Financial data check:', financialDataCheck);
-                if (!financialDataCheck.isValid) {
-                    console.error('بيانات مالية غير صحيحة:', financialDataCheck.errors);
-                    setStatusMessage(`بيانات مالية غير صحيحة: ${financialDataCheck.errors.join(', ')}`);
+                // Log financial data issues as warnings but continue processing
+                if (!financialDataCheck.isValid && financialDataCheck.errors.length > 0) {
+                    console.warn('تحذير بيانات مالية:', financialDataCheck.errors);
+                    // Display as warning but continue processing
+                    setStatusMessage(`تحذير: ${financialDataCheck.errors.join(', ')}. جاري المتابعة في المعالجة...`);
                     setDiagnostics((d) => ({ ...(d || {}), financialDataCheck }));
-                    setIsLoading(false);
-                    return;
                 }
 
                 // --- مرحلة المعالجة المتسلسلة ---
@@ -214,241 +239,189 @@ function ImportDataPage({ onDataProcessed }) {
                 // 3. معالجة الجرد الفعلي
                 const physicalInventoryResult = processPhysicalInventory(normalizedData.physicalInventory);
 
-                // 4. معالجة فائض المخزون
-                const excessInventoryResult = calculateExcessInventory(normalizedData.physicalInventory, normalizedData.sales);
+                // --- 4. دمج القوائم (Cross Pollination) حسب المنطق المحاسبي ---
 
-                // 5. معالجة المخزون النهائي (يعتمد على نتائج سابقة)
-                const endingInventoryResult = calculateEndingInventory(netPurchasesResult, physicalInventoryResult, excessInventoryResult);
+                // إضافة معرف فريد (_uid) لتجنب تعارض المعرفات (م) عند الدمج
+                if (netPurchasesResult.netPurchasesList) {
+                    netPurchasesResult.netPurchasesList.forEach(item => {
+                        item._uid = `A_${item['م']}`;
+                    });
+                }
+                if (netSalesResult.netSalesList) {
+                    netSalesResult.netSalesList.forEach(item => {
+                        item._uid = `C_${item['م']}`;
+                    });
+                }
 
-                // 6. معالجة تكلفة المبيعات (يعتمد على نتائج سابقة)
-                const salesCostResult = calculateSalesCost(netPurchasesResult, netSalesResult);
-
-                // 7. معالجة استحقاق الموردين (يعتمد على نتائج سابقة)
-                const suppliersPayablesResult = calculateSupplierPayables(normalizedData.supplierbalances, endingInventoryResult.endingInventoryList);
-
-                // 8. معالجة الجرد الدفتري (يعتمد على نتائج سابقة)
-                // دمج قائمة A و B من صافي المشتريات
+                // Net Purchases Combined (List A + List D)
+                // قائمة A: صافي المشتريات
+                // قائمة D: مرتجعات المبيعات اليتيمة (تعتبر توريد/دخول للمخزون)
                 const netPurchasesCombined = [
                     ...(netPurchasesResult.netPurchasesList || []),
-                    ...(netPurchasesResult.orphanReturnsList || [])
+                    ...(netSalesResult.orphanReturnsList || []).map(item => ({
+                        ...item,
+                        القائمة: 'D',
+                        ملاحظات: 'مرتجع مبيعات يتيم',
+                        _uid: `D_${item['م']}`
+                    }))
                 ];
 
-                // دمج قائمة C و D من صافي المبيعات
+                // Net Sales Combined (List C + List B + List F)
+                // قائمة C: صافي المبيعات
+                // قائمة B: مرتجعات المشتريات اليتيمة (تعتبر خروج من المخزون)
+                // قائمة F: الجرد السالب/المنتهي (يعتبر خروج/تالف)
                 const netSalesCombined = [
                     ...(netSalesResult.netSalesList || []),
-                    ...(netSalesResult.orphanReturnsList || [])
+                    ...(netPurchasesResult.orphanReturnsList || []).map(item => ({
+                        ...item,
+                        القائمة: 'B',
+                        ملاحظات: 'مرتجع مشتريات يتيم',
+                        _uid: `B_${item['م']}`
+                    })),
+                    ...(physicalInventoryResult.listF || []).map(item => ({
+                        ...item,
+                        القائمة: 'F',
+                        ملاحظات: item['ملاحظات'] || 'سالب/منتهي',
+                        _uid: `F_${item['م']}`
+                    }))
                 ];
 
+                console.log(`📊 [DataMerging] NetPurchases: ${netPurchasesCombined.length} (A+D), NetSales: ${netSalesCombined.length} (C+B+F)`);
+
+                // 5. معالجة فائض المخزون
+                const excessInventoryResult = calculateExcessInventory(
+                    normalizedData.physicalInventory,
+                    normalizedData.sales,
+                    netPurchasesCombined,
+                    netSalesCombined
+                );
+
+                // 6. معالجة المخزون النهائي
+                // يستخدم صافي المشتريات المدمج (A+D) والجرد الفعلي الموجب (E)
+                const endingInventoryResult = calculateEndingInventory(
+                    netPurchasesCombined,
+                    physicalInventoryResult.listE,
+                    excessInventoryResult
+                );
+
+                // 7. معالجة تكلفة المبيعات
+                // يستخدم صافي المشتريات المدمج (A+D) وصافي المبيعات المدمج (C+B+F)
+                const salesCostResult = calculateSalesCost(
+                    netPurchasesCombined,
+                    netSalesCombined
+                );
+
+                // 8. معالجة استحقاق الموردين
+                const suppliersPayablesResult = calculateSupplierPayables(normalizedData.supplierbalances, endingInventoryResult.endingInventoryList);
+
+                // 9. تقارير تحليلية (تجهيز البيانات فقط)
+                // سيتم حسابها عند الطلب في App.jsx لتقليل زمن الانتظار
+
+                // 10. ملخص الحسابات الرئيسية
+                const mainAccountsResult = calculateMainAccountsSummary(suppliersPayablesResult);
+
+                // 11. معالجة الجرد الدفتري
+                // يستخدم القيم المدمجة للمقارنة
                 const bookInventoryResult = calculateBookInventory(netPurchasesCombined, netSalesCombined);
 
-                // --- التحقق النهائي من نتائج المعالجة ---
-                const processingResultsCheck = checkProcessingResults([
-                    netPurchasesResult,
-                    netSalesResult,
-                    physicalInventoryResult,
-                    excessInventoryResult,
-                    endingInventoryResult,
-                    salesCostResult,
-                    suppliersPayablesResult,
-                    bookInventoryResult
-                ]);
+                // 12. معالجة الاصناف الشاذة (يعتمد على نتائج سابقة)
+                // قائمة B (Orphan P), D (Orphan S), F (Physical Neg/Exp)
+                const abnormalItemsResult = calculateAbnormalItems(netPurchasesResult, netSalesResult, physicalInventoryResult);
 
-                console.log('=== PROCESSING RESULTS SUMMARY ===');
-                console.log('Net Purchases List:', netPurchasesResult.netPurchasesList?.length || 0);
-                console.log('Net Purchases Orphan Returns:', netPurchasesResult.orphanReturnsList?.length || 0);
-                console.log('Net Sales List:', netSalesResult.netSalesList?.length || 0);
-                console.log('Net Sales Orphan Returns:', netSalesResult.orphanReturnsList?.length || 0);
-                console.log('Physical Inventory List:', physicalInventoryResult.processedList?.length || 0);
-                console.log('Ending Inventory List:', endingInventoryResult.endingInventoryList?.length || 0);
-                console.log('Book Inventory List:', bookInventoryResult?.length || 0);
-                console.log('Excess Inventory List:', excessInventoryResult?.length || 0);
-                console.log('Sales Cost List:', salesCostResult?.costOfSalesList?.length || 0);
-                console.log('Suppliers Payables List:', suppliersPayablesResult?.length || 0);
-
-                if (!processingResultsCheck.isValid) {
-                    console.error('نتائج المعالجة غير صحيحة:', processingResultsCheck.errors);
-                    setStatusMessage(`نتائج المعالجة غير صحيحة: ${processingResultsCheck.errors.join(', ')}`);
-                    setDiagnostics((d) => ({ ...(d || {}), processingResultsCheck }));
-                    setIsLoading(false);
-                    return;
+                // 13. إثراء تقرير صافي المشتريات (كميات الجرد والمبيعات)
+                if (salesCostResult && endingInventoryResult) {
+                    const enrichedPurchasesList = enrichNetPurchases(
+                        netPurchasesResult.netPurchasesList,
+                        salesCostResult.purchaseUsageMap,
+                        endingInventoryResult.updatedNetPurchasesList
+                    );
+                    netPurchasesResult.netPurchasesList = enrichedPurchasesList;
                 }
-                // Populate diagnostics summary for UI
-                setDiagnostics({
-                    validationResults,
-                    dataSufficiencyCheck,
-                    financialDataCheck,
-                    processingResultsCheck,
-                    summary: {
-                        netPurchasesCount: netPurchasesResult.netPurchasesList?.length || 0,
-                        netPurchasesOrphans: netPurchasesResult.orphanReturnsList?.length || 0,
-                        netSalesCount: netSalesResult.netSalesList?.length || 0,
-                        netSalesOrphans: netSalesResult.orphanReturnsList?.length || 0,
-                        physicalInventoryCount: physicalInventoryResult.processedList?.length || 0,
-                        endingInventoryCount: endingInventoryResult.endingInventoryList?.length || 0,
-                    }
-                });
 
-                // إرسال جميع البيانات المعالجة إلى المكون الرئيسي (App.jsx)
-                onDataProcessed({
-                    raw: normalizedData,
+                // تجميع جميع النتائج
+                const processedData = {
                     netPurchases: netPurchasesResult,
                     netSales: netSalesResult,
                     physicalInventory: physicalInventoryResult,
-                    endingInventory: endingInventoryResult,
-                    bookInventory: bookInventoryResult,
                     excessInventory: excessInventoryResult,
+                    endingInventory: endingInventoryResult,
                     salesCost: salesCostResult,
                     suppliersPayables: suppliersPayablesResult,
-                });
+                    bookInventory: bookInventoryResult,
+                    abnormalItems: abnormalItemsResult,
+                    mainAccounts: mainAccountsResult
+                };
 
-                setStatusMessage(`تم استيراد ومعالجة البيانات بنجاح!`);
+                console.log('كل البيانات تمت معالجتها بنجاح');
+                setStatusMessage('تمت معالجة جميع البيانات بنجاح!');
+
+                // Pass the processed data to the parent component
+                onDataProcessed(processedData);
+
+                setIsLoading(false);
             } else {
+                console.error('فشل في قراءة الملف:', readResult.error);
                 setStatusMessage(`فشل في قراءة الملف: ${readResult.error}`);
+                setIsLoading(false);
             }
         } catch (error) {
-            console.error("Processing Error:", error);
-            setStatusMessage(`حدث خطا غير متوقع: ${error.message}`);
-        } finally {
+            console.error('خطأ غير متوقع:', error);
+            setStatusMessage(`خطأ غير متوقع: ${error.message}`);
             setIsLoading(false);
         }
     };
 
-    // دالة للتحقق من كفاية البيانات لإنشاء التقارير
-    const checkDataSufficiency = (rawData) => {
-        const errors = [];
-        let isSufficient = true;
-
-        // التحقق من توفر ملفات الإدخال الاربعة
-        const requiredTables = ['purchases', 'sales', 'physicalInventory', 'supplierbalances'];
-        for (const table of requiredTables) {
-            if (!rawData[table] || rawData[table].length < 2) { // Header + at least 1 row
-                errors.push(`بيانات ${table} مفقودة او فارغة`);
-                isSufficient = false;
-            }
-        }
-
-        // التحقق من وجود بيانات كافية في كل جدول
-        if (rawData.purchases && rawData.purchases.length < 2) {
-            errors.push('بيانات المشتريات غير كافية (يجب ان تحتوي على صفوف بيانات)');
-            isSufficient = false;
-        }
-
-        if (rawData.sales && rawData.sales.length < 2) {
-            errors.push('بيانات المبيعات غير كافية (يجب ان تحتوي على صفوف بيانات)');
-            isSufficient = false;
-        }
-
-        if (rawData.physicalInventory && rawData.physicalInventory.length < 2) {
-            errors.push('بيانات الجرد الفعلي غير كافية (يجب ان تحتوي على صفوف بيانات)');
-            isSufficient = false;
-        }
-
-        if (rawData.supplierbalances && rawData.supplierbalances.length < 2) {
-            errors.push('بيانات ارصدة الموردين غير كافية (يجب ان تحتوي على صفوف بيانات)');
-            isSufficient = false;
-        }
-
-        return { isSufficient, errors };
-    };
-
-    // دالة للتحقق من سلامة البيانات المالية
-    const checkFinancialDataIntegrity = (normalizedData) => {
-        const errors = [];
-        let isValid = true;
-
-        // التحقق من ان الكميات والافرادي ارقام صحيحة موجبة
-        const checkFinancialFields = (data, tableName) => {
-            if (!data || data.length < 2) return;
-
-            const headers = data[0];
-            const quantityIndex = headers.indexOf('الكمية');
-            const unitPriceIndex = headers.indexOf('الافرادي');
-
-            for (let i = 1; i < data.length; i++) {
-                const row = data[i];
-
-                // التحقق من الكمية
-                if (quantityIndex !== -1 && quantityIndex < row.length) {
-                    const quantity = parseFloat(row[quantityIndex]);
-                    if (isNaN(quantity) || quantity <= 0) {
-                        errors.push(`كمية غير صحيحة في صف ${i} لجدول ${tableName}: ${row[quantityIndex]}`);
-                        isValid = false;
-                    }
-                }
-
-                // التحقق من الافرادي
-                if (unitPriceIndex !== -1 && unitPriceIndex < row.length) {
-                    const unitPrice = parseFloat(row[unitPriceIndex]);
-                    if (isNaN(unitPrice) || unitPrice < 0) {
-                        errors.push(`سعر وحدة غير صحيح في صف ${i} لجدول ${tableName}: ${row[unitPriceIndex]}`);
-                        isValid = false;
-                    }
-                }
-            }
-        };
-
-        checkFinancialFields(normalizedData.purchases, 'المشتريات');
-        checkFinancialFields(normalizedData.sales, 'المبيعات');
-
-        return { isValid, errors };
-    };
-
-    // دالة للتحقق من نتائج المعالجة
-    const checkProcessingResults = (results) => {
-        const errors = [];
-        let isValid = true;
-
-        // التحقق من ان جميع النتائج موجودة وليست فارغة
-        for (let i = 0; i < results.length; i++) {
-            const result = results[i];
-            if (!result) {
-                errors.push(`نتيجة المعالجة ${i + 1} فارغة`);
-                isValid = false;
-            }
-        }
-
-        return { isValid, errors };
-    };
-
     return (
         <div style={{ padding: '20px' }}>
-            <Title level={4}>استيراد البيانات من ملف Excel</Title>
-            <p>يرجى اختيار ملف Excel الذي يحتوي على بيانات المشتريات، المبيعات، المخزون، وارصدة الموردين.</p>
+            <Title level={2}>استيراد البيانات</Title>
+
+            {diagnostics && diagnostics.validationResults && (
+                <Alert
+                    message="نتائج التشخيص"
+                    description={
+                        <div>
+                            {diagnostics.validationResults.errors.map((error, index) => (
+                                <div key={index}>{error}</div>
+                            ))}
+                        </div>
+                    }
+                    type="warning"
+                    showIcon
+                    style={{ marginBottom: '16px' }}
+                />
+            )}
 
             <Space direction="vertical" size="large" style={{ width: '100%' }}>
-                <Button type="primary" size="large" onClick={handleFileSelect} loading={isLoading}>
-                    اختر ملف Excel
+                <Text>اختر ملف Excel يحتوي على البيانات المطلوبة:</Text>
+
+                <Button
+                    type="primary"
+                    icon={<FileExcelOutlined />}
+                    onClick={handleFileSelect}
+                    loading={isLoading}
+                    size="large"
+                >
+                    {fileName ? `تغيير الملف: ${fileName}` : 'اختر ملف Excel'}
                 </Button>
 
-                {fileName && <Alert message="الملف المختار" description={<Text strong>{fileName}</Text>} type="info" showIcon />}
-                {statusMessage && <Alert message="الحالة" description={statusMessage} type={statusMessage.includes('فشل') || statusMessage.includes('خطا') ? 'error' : 'success'} showIcon />}
-                {diagnostics && (
-                    <div style={{ marginTop: 12 }}>
-                        <Alert
-                            message="ملخّص التحقق والمعالجة"
-                            description={<div>
-                                <div>Net Purchases: {diagnostics.summary?.netPurchasesCount} (orphans: {diagnostics.summary?.netPurchasesOrphans})</div>
-                                <div>Net Sales: {diagnostics.summary?.netSalesCount} (orphans: {diagnostics.summary?.netSalesOrphans})</div>
-                                <div>Physical Inventory: {diagnostics.summary?.physicalInventoryCount}</div>
-                                <div>Ending Inventory: {diagnostics.summary?.endingInventoryCount}</div>
-                                {diagnostics.validationResults && !diagnostics.validationResults.isValid && (
-                                    <div style={{ marginTop: 8, color: 'red' }}>
-                                        <strong>Validation errors:</strong>
-                                        <ul>{diagnostics.validationResults.errors.map((e, i) => <li key={i}>{e}</li>)}</ul>
-                                    </div>
-                                )}
-                                {diagnostics.dataSufficiencyCheck && !diagnostics.dataSufficiencyCheck.isSufficient && (
-                                    <div style={{ marginTop: 8, color: 'orange' }}>
-                                        <strong>Data sufficiency issues:</strong>
-                                        <ul>{diagnostics.dataSufficiencyCheck.errors.map((e, i) => <li key={i}>{e}</li>)}</ul>
-                                    </div>
-                                )}
-                            </div>}
-                            type="info"
-                            showIcon
-                        />
-                    </div>
+                {statusMessage && (
+                    <Alert
+                        message={isLoading ? "جاري المعالجة..." : "الحالة"}
+                        description={statusMessage}
+                        type={statusMessage.includes('فشل') || statusMessage.includes('خطأ') ? "error" : "info"}
+                        showIcon
+                    />
                 )}
+
+                <div style={{ marginTop: '20px' }}>
+                    <Title level={4}>تعليمات الاستيراد:</Title>
+                    <ul>
+                        <li>يجب أن يحتوي الملف على أوراق باسماء: مشتريات, مبيعات, المخزون, الارصدة</li>
+                        <li>تأكد من صحة تنسيق الأعمدة حسب المواصفات المطلوبة</li>
+                        <li>الحقول المطلوبة: رمز المادة, الكمية, الافرادي, تاريخ الصلاحية, المورد</li>
+                        <li>حجم الملف المدعوم: حتى 50 ميجابايت</li>
+                    </ul>
+                </div>
             </Space>
         </div>
     );

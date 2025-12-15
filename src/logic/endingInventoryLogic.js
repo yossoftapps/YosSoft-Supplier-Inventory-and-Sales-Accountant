@@ -94,21 +94,89 @@ function calculateAdditionalFields(item, excessInventoryMap) {
   }
   item['البيان'] = finalStatus;
 
-  // 6. حساب فائض المخزون لكل سجل في المخزون النهائي
+  // 6. حساب فائض المخزون وكل القيم المرتبطة به
   if (excessInventoryMap && excessInventoryMap.has(item['رمز المادة'])) {
     const excessItem = excessInventoryMap.get(item['رمز المادة']);
     const totalInventory = roundToDecimalPlaces(excessItem['الكمية'] || 0, 2);
     const excess = roundToDecimalPlaces(excessItem['فائض المخزون'] || 0, 2);
 
-    // حساب نسبة ما يمثله كل سجل من المخزون
-    if (compare(totalInventory, 0) > 0) {
-      const ratio = divide(excess, totalInventory);
-      item['فائض المخزون'] = multiply(excess, ratio);
-    } else {
-      item['فائض المخزون'] = new Decimal(0);
-    }
+    item['نسبة الفائض'] = excessItem['نسبة الفائض'] || '0%';
+
+    const excessPercentStr = excessItem['نسبة الفائض'] || '0%';
+    const excessPercentAndSign = parseFloat(excessPercentStr) || 0; // e.g. -50 or 50
+
+    // حساب فائض المخزون = الكمية * نسبة الفائض %
+    // Excess = Quantity * (Percent / 100)
+    // Round result to integer
+    const quantity = item['الكمية'];
+    const excessValue = multiply(quantity, excessPercentAndSign / 100);
+    item['فائض المخزون'] = roundToInteger(excessValue);
+
+    // حساب قيمة فائض المخزون = الافرادي * فائض المخزون
+    const unitPrice = roundToInteger(item['الافرادي'] || 0);
+    item['قيمة فائض المخزون'] = multiply(unitPrice, item['فائض المخزون']);
+
+    // حساب كمية المبيعات = نسبة المبيعات من تقرير الفائض * الكمية
+    // Sales Quantity = Sales Percentage from Excess Report * Quantity
+    const salesPercentStr = excessItem['نسبة المبيعات'] || '0%';
+    const salesPercent = parseFloat(salesPercentStr) || 0;
+    const salesQuantity = multiply(quantity, salesPercent / 100);
+    item['كمية المبيعات'] = roundToInteger(salesQuantity);
+
   } else {
     item['فائض المخزون'] = new Decimal(0);
+    item['قيمة فائض المخزون'] = new Decimal(0);
+    item['نسبة الفائض'] = '0%';
+    item['كمية المبيعات'] = new Decimal(0);
+  }
+
+  // حساب معد للارجاع والاحتياج بناءً على فائض المخزون المحسوب
+  const excessVal = item['فائض المخزون'];
+
+  // معد للارجاع
+  if (compare(excessVal, 0) > 0) {
+    item['معد للارجاع'] = roundToInteger(excessVal);
+    // حساب قيمة معد للارجاع = الافرادي * معد للارجاع
+    const unitPrice = roundToInteger(item['الافرادي'] || 0);
+    item['قيمة معد للارجاع'] = multiply(unitPrice, item['معد للارجاع']);
+  } else {
+    item['معد للارجاع'] = new Decimal(0);
+    item['قيمة معد للارجاع'] = new Decimal(0);
+  }
+
+  // الاحتياج
+  if (compare(excessVal, 0) < 0) {
+    item['الاحتياج'] = roundToInteger(excessVal).abs();
+    // حساب قيمة الاحتياج = الافرادي * الاحتياج
+    const unitPrice = roundToInteger(item['الافرادي'] || 0);
+    item['قيمة الاحتياج'] = multiply(unitPrice, item['الاحتياج']);
+  } else {
+    item['الاحتياج'] = new Decimal(0);
+    item['قيمة الاحتياج'] = new Decimal(0);
+  }
+
+  // حساب مخزون مثالي وقيمته
+  // مخزون مثالي = الكمية إذا كانت الحالة "جيد" وبيان الصلاحية "بعيد"
+  if (conditionStatus === 'جيد' && validityStatus === 'بعيد') {
+    item['مخزون مثالي'] = roundToInteger(item['الكمية']);
+    // حساب قيمة مخزون مثالي = الافرادي * مخزون مثالي
+    const unitPrice = roundToInteger(item['الافرادي'] || 0);
+    item['قيمة مخزون مثالي'] = multiply(unitPrice, item['مخزون مثالي']);
+  } else {
+    item['مخزون مثالي'] = new Decimal(0);
+    item['قيمة مخزون مثالي'] = new Decimal(0);
+  }
+
+  // حساب صنف جديد وقيمته
+  // صنف جديد = الكمية إذا كانت الحالة "صنف جديد"
+  if (conditionStatus === 'صنف جديد') {
+    item['صنف جديد'] = roundToInteger(item['الكمية']);
+    // حساب قيمة صنف جديد = الافرادي * صنف جديد
+    const unitPrice = roundToInteger(item['الافرادي'] || 0);
+    item['قيمة صنف جديد'] = multiply(unitPrice, item['صنف جديد']);
+  } else {
+    item['صنف جديد'] = new Decimal(0);
+    item['قيمة صنف جديد'] = new Decimal(0);
   }
 }
 
@@ -156,20 +224,21 @@ function splitRecord(record, splitQuantity) {
   return { firstRecord, secondRecord };
 }
 
-export const calculateEndingInventory = (netPurchasesData, physicalInventoryData, excessInventoryData) => {
+export const calculateEndingInventory = (netPurchasesListInput, physicalInventoryListInput, excessInventoryData) => {
   const startTime = performance.now();
-  const physicalCount = physicalInventoryData?.listE?.length || 0;
+  const physicalCount = physicalInventoryListInput?.length || 0;
   console.log(`🚀 [EndingInventory] معالجة: ${physicalCount} سجل جرد فعلي`);
 
   // 1. إعداد البيانات المصدر (إنشاء نسخ للتعديل)
-  let netPurchasesList = netPurchasesData.netPurchasesList.map(p => ({
+  // استخدام القائمة المدمجة (A+D) مباشرة
+  let netPurchasesList = netPurchasesListInput.map(p => ({
     ...p,
     'كمية الجرد': new Decimal(0),
     'ملاحظات': 'مخزون دفتري', // الافتراضي هو دفتري
     'رقم السجل': null,
   }));
 
-  let physicalInventoryList = physicalInventoryData.listE.map(p => ({ ...p }));
+  let physicalInventoryList = physicalInventoryListInput.map(p => ({ ...p }));
 
   const endingInventoryList = [];
 
@@ -346,7 +415,6 @@ export const calculateEndingInventory = (netPurchasesData, physicalInventoryData
 
         // إنشاء سجل في المخزون النهائي
         const endingRecord = {
-          м: physicalRecordRef['م'], // typo fix: м -> م
           'م': physicalRecordRef['م'],
           'رمز المادة': physicalRecordRef['رمز المادة'],
           'اسم المادة': physicalRecordRef['اسم المادة'],
@@ -378,25 +446,11 @@ export const calculateEndingInventory = (netPurchasesData, physicalInventoryData
     }
   }
 
-  // 5. إضافة قائمة ب (مرتجع المشتريات اليتيمة) إلى التقرير النهائي
-  const listB = netPurchasesData.orphanReturnsList.map(item => ({
-    ...item,
-    القائمة: 'B', // تحديد القائمة
-    // إضافة اعمدة فارغة للمطابقة مع هيكل الجدول
-    'تاريخ الشراء': item['تاريخ العملية'],
-    'المورد': item['المورد'],
-    'الافرادي': roundToInteger(item['الافرادي']),
-    'الاجمالي': multiply(roundToInteger(item['الافرادي']), roundToDecimalPlaces(item['الكمية'], 2)),
-    'بيان الحركة': '',
-    'رقم السجل': null,
-  }));
-
   // 6. حساب الاعمدة الإضافية للقائمة النهائية
   endingInventoryList.forEach(item => calculateAdditionalFields(item, excessInventoryMap));
-  listB.forEach(item => calculateAdditionalFields(item, excessInventoryMap));
 
   // 7. فرز القائمة النهائية حسب رمز المادة ثم تاريخ الصلاحية
-  const finalList = [...endingInventoryList, ...listB];
+  const finalList = endingInventoryList;
   finalList.sort((a, b) => {
     if (a['رمز المادة'] !== b['رمز المادة']) {
       return a['رمز المادة'].localeCompare(b['رمز المادة']);
@@ -413,10 +467,6 @@ export const calculateEndingInventory = (netPurchasesData, physicalInventoryData
     }
   });
 
-  // 9. فصل القائمة النهائية مرة اخرى بعد الفرز والتحديث
-  const finalEndingInventoryList = finalList.filter(item => item['القائمة'] !== 'B');
-  const finalListB = finalList.filter(item => item['القائمة'] === 'B');
-
   // Reconstruction of active purchases list from the Map (handling splits)
   // This replaces the stale 'netPurchasesList' with the actual state after matching
   const updatedNetPurchasesList = Array.from(purchasesByItem.values()).flat();
@@ -424,12 +474,11 @@ export const calculateEndingInventory = (netPurchasesData, physicalInventoryData
   const totalTime = performance.now() - startTime;
   console.log(`✅ [EndingInventory] مكتمل:`);
   console.log(`   ⏱️  ${totalTime.toFixed(0)}ms`);
-  console.log(`   📊 ${finalEndingInventoryList.length} مخزون نهائي | ${finalListB.length} قائمة B`);
+  console.log(`   📊 ${finalList.length} مخزون نهائي`);
 
   // إرجاع القوائم النهائية
   return {
-    endingInventoryList: finalEndingInventoryList,
-    listB: finalListB,
+    endingInventoryList: finalList,
     updatedNetPurchasesList: updatedNetPurchasesList,
   };
 };

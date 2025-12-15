@@ -1,24 +1,24 @@
-// File processing progress component
-import React, { useState, useEffect } from 'react';
+// مكون تقدم معالجة الملف
+import React, { useState, useEffect, memo } from 'react';
 import { Progress, Card, Typography, Space } from 'antd';
 
 const { Title, Text } = Typography;
 
-const FileProcessingProgress = () => {
+const FileProcessingProgress = memo(() => {
   const [progress, setProgress] = useState(null);
   const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
-    // Listen for progress updates from Electron main process
+    // الاستماع لتحديثات التقدم من العملية الرئيسية لـ Electron
     const handleProgress = (event, progressData) => {
       setProgress(progressData);
       setIsVisible(true);
     };
 
-    // Add event listener
+    // إضافة مستمع للأحداث
     window.electron.on('processing-progress', handleProgress);
 
-    // Cleanup
+    // تنظيف
     return () => {
       window.electron.removeListener('processing-progress', handleProgress);
     };
@@ -64,6 +64,6 @@ const FileProcessingProgress = () => {
       </Card>
     </div>
   );
-};
+});
 
 export default FileProcessingProgress;

@@ -9,8 +9,12 @@ import './i18n';
 import {
   InitialPerformanceOptimizer,
   CriticalResourcesLoader,
-  StartupPerformanceMonitor
+  StartupPerformanceMonitor,
+  ElectronStartupOptimizer
 } from './utils/startupOptimizer';
+
+// استيراد مدير الذاكرة الدوري
+import { memoryManager } from './utils/periodicMemoryManager';
 
 // قياس وقت البدء
 const startTime = performance.now();
@@ -23,6 +27,14 @@ try {
   console.log('✅ تم تطبيق تحسينات البدء');
 } catch (error) {
   console.warn('⚠️ خطأ في تطبيق بعض التحسينات:', error);
+}
+
+// تفعيل مدير الذاكرة الدوري
+try {
+  memoryManager.start();
+  console.log('🧠 تم تفعيل مدير الذاكرة الدوري');
+} catch (error) {
+  console.warn('⚠️ خطأ في تفعيل مدير الذاكرة:', error);
 }
 
 // تحميل التطبيق

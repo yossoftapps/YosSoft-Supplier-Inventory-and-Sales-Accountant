@@ -5,8 +5,8 @@ export default defineConfig({
   plugins: [react()],
   base: './',
   server: {
-    port: 3001,
-    strictPort: false,
+    port: 3005,
+    strictPort: false, // Allow fallback when port is occupied
     host: 'localhost',
     hmr: {
       protocol: 'ws',

@@ -56,25 +56,39 @@ export const calculateSupplierPayables = (supplierbalancesRaw, endingInventoryLi
         قريب_جدا: new Decimal(0),
         معد_للاسترجاع: new Decimal(0),
         اصناف_جديدة: new Decimal(0),
+        فائض_مخزون: new Decimal(0),
+        مخزون_مثالي: new Decimal(0),
+        قيمة_احتياج: new Decimal(0),
+        قيمة_معد_للاسترجاع: new Decimal(0),
+        قيمة_اصناف_جديدة: new Decimal(0),
       });
     }
     const breakdown = inventoryBreakdownBySupplier.get(supplier);
 
+    // تجميع القيم المحددة (Specific Values)
+    breakdown.فائض_مخزون = add(breakdown.فائض_مخزون, item['قيمة فائض المخزون'] || 0);
+    breakdown.قيمة_معد_للاسترجاع = add(breakdown.قيمة_معد_للاسترجاع, item['قيمة معد للارجاع'] || 0);
+    breakdown.مخزون_مثالي = add(breakdown.مخزون_مثالي, item['قيمة مخزون مثالي'] || 0);
+    breakdown.قيمة_اصناف_جديدة = add(breakdown.قيمة_اصناف_جديدة, item['قيمة صنف جديد'] || 0);
+    breakdown.قيمة_احتياج = add(breakdown.قيمة_احتياج, item['قيمة الاحتياج'] || 0);
+
+    // تجميع حسب بيان الحركة (للاعمدة: راكد تماما، مخزون زائد) - يعتمد على كامل قيمة الصنف
     switch (movementStatus) {
       case 'راكد تماما':
         breakdown.راكد_تماما = add(breakdown.راكد_تماما, totalValue);
         break;
       case 'مخزون زائد':
+        // هذا "مخزون زائد" كحالة (تصنيف)، يختلف عن "فائض المخزون" كقيمة
         breakdown.مخزون_زائد = add(breakdown.مخزون_زائد, totalValue);
         break;
+      // 'احتياج' هنا كحالة، لكن المستخدم طلب عمود 'الاحتياج' كقيمة. سنستخدم القيمة المحسوبة أعلاه.
+      // لكن للاحتياط، اذا كان المقصود تصنيف الحالة:
       case 'احتياج':
         breakdown.احتياج = add(breakdown.احتياج, totalValue);
         break;
-      case 'مناسب':
-        breakdown.مناسب = add(breakdown.مناسب, totalValue);
-        break;
     }
 
+    // تجميع حسب بيان الصلاحية
     switch (expiryStatus) {
       case 'منتهي':
         breakdown.منتهي = add(breakdown.منتهي, totalValue);
@@ -82,14 +96,6 @@ export const calculateSupplierPayables = (supplierbalancesRaw, endingInventoryLi
       case 'قريب جدا':
         breakdown.قريب_جدا = add(breakdown.قريب_جدا, totalValue);
         break;
-    }
-
-    if (age < 90) {
-      breakdown.اصناف_جديدة = add(breakdown.اصناف_جديدة, totalValue);
-    }
-
-    if (status === 'معد للارجاع') {
-      breakdown.معد_للاسترجاع = add(breakdown.معد_للاسترجاع, totalValue);
     }
   }
 
@@ -119,22 +125,38 @@ export const calculateSupplierPayables = (supplierbalancesRaw, endingInventoryLi
       قريب_جدا: new Decimal(0),
       معد_للاسترجاع: new Decimal(0),
       اصناف_جديدة: new Decimal(0),
+      فائض_مخزون: new Decimal(0),
+      مخزون_مثالي: new Decimal(0),
+      قيمة_احتياج: new Decimal(0),
+      قيمة_معد_للاسترجاع: new Decimal(0),
+      قيمة_اصناف_جديدة: new Decimal(0),
     };
 
     payablesReport.push({
       ...balanceRecord,
       'م': payablesReport.length + 1,
+      'رمز الحساب': balanceRecord['رمز الحساب'] || '',
+      'المورد': supplier,
+      'مدين': roundToInteger(debitRaw).toNumber(),
+      'دائن': roundToInteger(creditRaw).toNumber(),
+      'الحساب المساعد': balanceRecord['الحساب المساعد'] || '',
       'الرصيد': roundToInteger(balance).toNumber(),
       'قيمة المخزون': roundToInteger(inventoryValue).toNumber(),
       'الاستحقاق': roundToInteger(payable).toNumber(),
       'المبلغ المستحق': roundToInteger(amountDue).toNumber(),
-      'راكد تماما': roundToInteger(breakdown.راكد_تماما).toNumber(),
-      'مخزون زائد': roundToInteger(breakdown.مخزون_زائد).toNumber(),
-      'الاحتياج': roundToInteger(breakdown.احتياج).toNumber(),
-      'اصناف جديدة': roundToInteger(breakdown.اصناف_جديدة).toNumber(),
+
+      // الاعمدة الجديدة المطلوبة (القيم)
+      'فائض المخزون': roundToInteger(breakdown.فائض_مخزون).toNumber(),
+      'معد للارجاع': roundToInteger(breakdown.قيمة_معد_للاسترجاع).toNumber(),
+      'مخزون مثالي': roundToInteger(breakdown.مخزون_مثالي).toNumber(),
+      'اصناف جديدة': roundToInteger(breakdown.قيمة_اصناف_جديدة).toNumber(),
+      'الاحتياج': roundToInteger(breakdown.قيمة_احتياج).toNumber(),
+
+      // اعمدة الحالة (Complete Item Value based on Status)
       'منتهي': roundToInteger(breakdown.منتهي).toNumber(),
+      'راكد تماما': roundToInteger(breakdown.راكد_تماما).toNumber(),
       'قريب جدا': roundToInteger(breakdown.قريب_جدا).toNumber(),
-      'معد للارجاع': roundToInteger(breakdown.معد_للاسترجاع).toNumber(),
+      'مخزون زائد': roundToInteger(breakdown.مخزون_زائد).toNumber(),
     });
   }
 

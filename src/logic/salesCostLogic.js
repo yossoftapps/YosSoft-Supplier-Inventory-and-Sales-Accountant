@@ -32,10 +32,10 @@ const sortByDateAsc = (data, dateKey) => {
     return data.sort((a, b) => new Date(a[dateKey]) - new Date(b[dateKey]));
 };
 
-export const calculateSalesCost = (netPurchasesResult, netSalesResult) => {
+export const calculateSalesCost = (netPurchasesList, netSalesList) => {
     const startTime = performance.now();
-    const purchases = [...(netPurchasesResult.netPurchasesList || [])];
-    const sales = [...(netSalesResult.netSalesList || [])];
+    const purchases = [...(netPurchasesList || [])];
+    const sales = [...(netSalesList || [])];
 
     console.log(`🚀 [SalesCost] معالجة: ${sales.length} مبيعات مقابل ${purchases.length} مشتريات`);
 
@@ -83,6 +83,8 @@ export const calculateSalesCost = (netPurchasesResult, netSalesResult) => {
         (p) => (p._dateObj - saleDateObj) <= (3 * 24 * 60 * 60 * 1000) &&
             saleDateObj < p._dateObj
     ];
+
+    const purchaseUsageMap = new Map();
 
     const salesWithCost = sales.map((sale, index) => {
         const saleQuantity = roundToDecimalPlaces(sale['الكمية'] || 0, 2);
@@ -140,6 +142,11 @@ export const calculateSalesCost = (netPurchasesResult, netSalesResult) => {
                         const costOfTaken = multiply(quantityToTake, unitPrice);
 
                         purchase.remainingQuantity = subtract(purchase.remainingQuantity, quantityToTake);
+
+                        // Update Purchase Usage Map
+                        const pId = purchase['_uid'] || purchase['م'];
+                        const currentUsage = purchaseUsageMap.get(pId) || new Decimal(0);
+                        purchaseUsageMap.set(pId, add(currentUsage, quantityToTake));
                         totalCost = add(totalCost, costOfTaken);
 
                         purchaseDetails.push({
@@ -229,12 +236,14 @@ export const calculateSalesCost = (netPurchasesResult, netSalesResult) => {
         };
     });
 
+
     const totalTime = performance.now() - startTime;
     console.log(`✅ [SalesCost] مكتمل:`);
     console.log(`   ⏱️  ${totalTime.toFixed(0)}ms`);
     console.log(`   📊 ${salesWithCost.length} عملية`);
 
     return {
-        costOfSalesList: salesWithCost
+        costOfSalesList: salesWithCost,
+        purchaseUsageMap
     };
 };

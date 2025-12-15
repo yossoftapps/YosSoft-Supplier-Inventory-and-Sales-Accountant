@@ -1,0 +1,167 @@
+/* App.css - Main application styles */
+
+/* Import unified styles */
+@import './assets/styles/unified-styles.css';
+
+/* Body padding to account for fixed navbar */
+body {
+  padding-top: 60px; /* Adjust based on navbar height */
+}
+
+.header {
+  background: #1890ff;
+  padding: 0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.logo-container {
+  float: left;
+  width: 120px;
+  height: 31px;
+  margin: 16px 24px 16px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.logo-image {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.logo-placeholder {
+  width: 100%;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  color: white;
+  border-radius: 4px;
+}
+
+.header-content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+}
+
+.site-layout-background {
+  background: #fff;
+}
+
+/* RTL support for Arabic */
+[dir='rtl'] .ant-menu-item,
+[dir='rtl'] .ant-menu-submenu-title {
+  text-align: right;
+}
+
+[dir='rtl'] .ant-menu-inline .ant-menu-item::after {
+  right: auto;
+  left: 0;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .logo-container {
+    width: 80px;
+    height: 24px;
+    margin: 12px 16px 12px 0;
+  }
+  
+  .header-content h1 {
+    font-size: 1.2rem;
+  }
+}
+
+/* Error messages */
+.error-alert {
+  margin-bottom: 16px;
+}
+
+/* Print/export buttons */
+.print-export-buttons {
+  margin-bottom: 16px;
+  text-align: right;
+}
+
+[dir='rtl'] .print-export-buttons {
+  text-align: left;
+}
+
+/* Form elements */
+.form-section {
+  margin-bottom: 24px;
+  padding: 16px;
+  background: #fafafa;
+  border-radius: 4px;
+}
+
+.form-section-title {
+  margin-bottom: 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #e8e8e8;
+  color: #1890ff;
+  font-weight: bold;
+}
+
+/* Progress bars */
+.progress-section {
+  margin: 16px 0;
+}
+
+/* Tabs */
+.ant-tabs-tab {
+  font-size: 0.9rem;
+}
+
+/* Icons */
+.action-icon {
+  margin-right: 8px;
+}
+
+[dir='rtl'] .action-icon {
+  margin-right: 0;
+  margin-left: 8px;
+}
+
+/* Layout adjustments */
+.ant-layout-sider {
+  background: #fff;
+}
+
+.ant-menu-inline {
+  border-right: none;
+}
+
+/* Fixed navigation bar */
+.fixed-navbar {
+  position: fixed;
+  top: 0;
+  z-index: 100;
+  background: white;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  padding: 12px 0;
+  margin-bottom: 24px;
+  width: 100%;
+}
+
+/* Collapsible sections */
+.collapsible-header {
+  cursor: pointer;
+  padding: 12px;
+  background: #f5f5f5;
+  border-radius: 4px;
+  margin-bottom: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.collapsible-content {
+  padding: 0 12px;
+  transition: all 0.3s ease;
+}

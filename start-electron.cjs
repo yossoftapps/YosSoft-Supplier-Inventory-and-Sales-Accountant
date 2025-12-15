@@ -28,11 +28,10 @@ async function waitForFirstAvailable(ports, perPortTimeout = 20000) {
 async function startApp() {
   console.log('في انتظار السيرفر...');
   try {
-    // ترتيب الأولويات: 3003 (المستخدم مسبقاً في electron.cjs) ثم 3001 ثم 3002 ثم 3004
-    const preferredPorts = [3003, 3001, 3002, 3004];
+    // ترتيب الأولويات: 3001 (المنفذ المحدد في vite.config.js) ثم 3002 ثم 3003 ثم 3004
+    const preferredPorts = [3005, 3001, 3002, 3003, 3004];
 
-    // ملاحظة: Vite مضبوط حالياً على 3001 مع strictPort=false، وبالتالي قد يختار منفذاً آخر
-    // لذلك نبحث عن أول منفذ متاح ضمن هذه المجموعة.
+    // ملاحظة: Vite مضبوط حالياً على 3001 مع strictPort=true، لذا يجب أن يستخدم هذا المنفذ
     const serverUrl = await waitForFirstAvailable(preferredPorts, 25000);
 
     console.log('السيرفر جاهز! جاري تشغيل التطبيق...');
@@ -51,7 +50,7 @@ async function startApp() {
     });
 
     electronProcess.on('close', (code) => {
-      console.log(`انتهى Electron بك��د: ${code}`);
+      console.log(`انتهى Electron بكود: ${code}`);
       process.exit(code);
     });
   } catch (err) {

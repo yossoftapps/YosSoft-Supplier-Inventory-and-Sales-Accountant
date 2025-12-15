@@ -148,7 +148,7 @@ app.whenReady().then(() => {
         ...details.responseHeaders,
         'Content-Security-Policy': [
           "default-src 'self'; " +
-          "script-src 'self' 'unsafe-inline' http://localhost:* ws://localhost:*; " +
+          "script-src 'self' 'unsafe-inline' http://localhost:* ws://localhost:* blob:; " +
           "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
           "font-src 'self' https://fonts.gstatic.com; " +
           "img-src 'self' data: https:; " +
@@ -159,12 +159,16 @@ app.whenReady().then(() => {
     });
   });
 
-  createWindow();
+  const mainWindow = createWindow();
+  
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
     }
   });
+  
+  // Return the mainWindow to keep a reference
+  return mainWindow;
 });
 
 app.on('window-all-closed', () => {

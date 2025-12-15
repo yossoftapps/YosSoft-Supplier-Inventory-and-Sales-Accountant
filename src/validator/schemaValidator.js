@@ -71,7 +71,10 @@ const TABLE_SCHEMAS = {
   // Supplier Balances table schema (ورقة الارصدة)
   supplierbalances: {
     requiredColumns: [
-      'م', 'رمز الحساب', 'المورد', 'مدين', 'دائن', 'الحساب المساعد'
+      'م', 'رمز الحساب', 'المورد', 'مدين', 'دائن'
+    ],
+    optionalColumns: [
+      'الحساب المساعد'
     ],
     columnTypes: {
       'م': 'number',

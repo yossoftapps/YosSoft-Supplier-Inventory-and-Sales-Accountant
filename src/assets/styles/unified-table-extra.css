@@ -1,0 +1,22 @@
+/* Styles for react-resizable handles */
+.react-resizable {
+  position: relative;
+  background-clip: padding-box;
+}
+
+.react-resizable-handle {
+  position: absolute;
+  width: 10px;
+  height: 100%;
+  bottom: 0;
+  right: -5px; /* Position to the right of the column */
+  cursor: col-resize;
+  background: transparent;
+  z-index: 1;
+}
+
+/* RTL adjustments for resizable handle */
+html[dir='rtl'] .react-resizable-handle {
+  left: -5px; /* Position to the left of the column in RTL */
+  right: auto;
+}

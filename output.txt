@@ -1,0 +1,3 @@
+Please manually install the missing dependencies. You can find the detailed instructions in the file `installation_instructions.md` that I just created.
+
+Once you have installed these packages, the errors should be resolved, and the new feature for draggable and resizable columns should work.

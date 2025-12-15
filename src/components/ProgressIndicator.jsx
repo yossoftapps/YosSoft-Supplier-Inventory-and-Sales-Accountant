@@ -6,7 +6,7 @@
  * Shows detailed information about data processing progress
  */
 
-import React from 'react';
+import React, { memo, useMemo } from 'react';
 import { Progress, Card, Statistic, Row, Col, Space, Typography, Button } from 'antd';
 import {
     ClockCircleOutlined,
@@ -22,7 +22,7 @@ const { Text, Title } = Typography;
  * مكون مؤشر التقدم التفصيلي
  * Detailed Progress Indicator
  */
-export const DetailedProgressIndicator = ({
+export const DetailedProgressIndicator = memo(({
     progress,
     stage,
     onCancel,
@@ -31,7 +31,7 @@ export const DetailedProgressIndicator = ({
     if (!progress) return null;
 
     // تنسيق الوقت
-    const formatTime = (ms) => {
+    const formatTime = useMemo(() => (ms) => {
         if (!ms) return '0s';
         const seconds = Math.floor(ms / 1000);
         const minutes = Math.floor(seconds / 60);
@@ -44,24 +44,24 @@ export const DetailedProgressIndicator = ({
         } else {
             return `${seconds}s`;
         }
-    };
+    }, []);
 
     // تحديد نوع مؤشر التقدم حسب النسبة
-    const getProgressStatus = (percent) => {
+    const getProgressStatus = useMemo(() => (percent) => {
         if (percent >= 100) return 'success';
         if (percent >= 75) return 'active';
         if (percent >= 50) return 'active';
         if (percent >= 25) return 'active';
         return 'active';
-    };
+    }, []);
 
     // تحديد لون مؤشر التقدم
-    const getProgressColor = (percent) => {
+    const getProgressColor = useMemo(() => (percent) => {
         if (percent >= 100) return '#52c41a';  // أخضر
         if (percent >= 75) return '#1890ff';   // أزرق
         if (percent >= 50) return '#faad14';   // برتقالي
         return '#ff4d4f';  // أحمر
-    };
+    }, []);
 
     const stageNames = {
         'building_indexes': 'بناء الفهارس',
@@ -189,13 +189,13 @@ export const DetailedProgressIndicator = ({
             </Space>
         </Card>
     );
-};
+});
 
 /**
  * مكون مؤشر تقدم مبسط
  * Simple Progress Indicator
  */
-export const SimpleProgressIndicator = ({ progress, title = 'جاري التحميل...' }) => {
+export const SimpleProgressIndicator = memo(({ progress, title = 'جاري التحميل...' }) => {
     if (!progress) return null;
 
     return (
@@ -214,7 +214,7 @@ export const SimpleProgressIndicator = ({ progress, title = 'جاري التحم
             </div>
         </div>
     );
-};
+});
 
 /**
  * مكون مؤشر تقدم متعدد المراحل
@@ -275,7 +275,7 @@ export const MultiStageProgressIndicator = ({
  * مكون إحصائيات الأداء النهائية
  * Final Performance Statistics Component
  */
-export const PerformanceStats = ({ stats }) => {
+export const PerformanceStats = memo(({ stats }) => {
     if (!stats) return null;
 
     return (
@@ -347,6 +347,6 @@ export const PerformanceStats = ({ stats }) => {
             </Row>
         </Card>
     );
-};
+});
 
 export default DetailedProgressIndicator;

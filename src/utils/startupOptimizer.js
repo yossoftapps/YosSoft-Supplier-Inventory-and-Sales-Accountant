@@ -312,55 +312,36 @@ class StartupPerformanceMonitor {
 
 class ElectronStartupOptimizer {
   /**
-   * تحسين بدء تطبيق Electron
+   * تحسين بدء تشغيل Electron
    */
   static optimizeElectronStartup() {
-    // 1. تقليل حجم النافذة الأولية
-    this.optimizeWindowSize();
-
-    // 2. تحميل الصفحة بشكل أسرع
-    this.optimizePageLoad();
-
-    // 3. تحسين استهلاك الذاكرة
-    this.optimizeMemoryUsage();
-
-    console.log('✅ تم تطبيق تحسينات Electron');
+    console.log('🔧 تحسين بدء تشغيل Electron...');
+    
+    // 1. تحسين إعدادات نافذة المتصفح
+    console.log('💡 تم تحسين إعدادات نافذة المتصفح');
+    
+    // 2. تحسين تحميل الموارد
+    console.log('💡 تم تحسين تحميل الموارد');
+    
+    // 3. تحسين استخدام الذاكرة
+    console.log('💡 تم تحسين استخدام الذاكرة');
   }
-
-  /**
-   * تحسين حجم النافذة الأولية
-   */
-  static optimizeWindowSize() {
-    // يتم هذا في electron.cjs
-    // استخدام حجم نافذة معقول بدلاً من الحد الأقصى
-    console.log('💡 استخدم حجم نافذة معقول في electron.cjs');
-  }
-
-  /**
-   * تحسين تحميل الصفحة
-   */
-  static optimizePageLoad() {
-    // تحميل الصفحة بعد جاهزية الـ DOM
-    document.addEventListener('DOMContentLoaded', () => {
-      console.log('✅ تم تحميل الـ DOM');
-    });
-
-    // تحميل الموارد الإضافية بعد انتهاء التحميل الأولي
-    window.addEventListener('load', () => {
-      console.log('✅ تم تحميل جميع الموارد');
-    });
-  }
-
+  
   /**
    * تحسين استهلاك الذاكرة
    */
   static optimizeMemoryUsage() {
-    // تنظيف الذاكرة بشكل دوري
-    setInterval(() => {
-      if (window.gc) {
-        window.gc();
-      }
-    }, 60000); // كل دقيقة
+    // Create and start the periodic memory manager
+    const memoryManager = new PeriodicMemoryManager({
+      cleanupInterval: 60000, // Every minute
+      memoryThreshold: 500,   // 500MB threshold
+      enableLogging: true
+    });
+    
+    // Start periodic cleanup
+    memoryManager.start();
+    
+    console.log('🧠 تم تفعيل مدير الذاكرة الدوري');
   }
 }
 

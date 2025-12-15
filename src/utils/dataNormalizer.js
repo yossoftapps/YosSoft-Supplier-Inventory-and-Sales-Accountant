@@ -94,11 +94,18 @@ function normalizeProcessedData(data) {
 
   // fallback for other arrays
   if (Array.isArray(data.bookInventory)) out.bookInventory = normalizeList(data.bookInventory);
-  // salesCost may be provided as an array or as an object { costOfSalesList: [] }
-  if (Array.isArray(data.salesCost)) {
-    out.salesCost = normalizeList(data.salesCost);
-  } else if (data.salesCost && Array.isArray(data.salesCost.costOfSalesList)) {
-    out.salesCost = normalizeList(data.salesCost.costOfSalesList);
+  // salesCost should be provided as an object { costOfSalesList: [], purchaseUsageMap: {} }
+  if (data.salesCost && Array.isArray(data.salesCost.costOfSalesList)) {
+    out.salesCost = {
+      costOfSalesList: normalizeList(data.salesCost.costOfSalesList),
+      purchaseUsageMap: data.salesCost.purchaseUsageMap || {}
+    };
+  } else if (Array.isArray(data.salesCost)) {
+    // fallback for array format
+    out.salesCost = {
+      costOfSalesList: normalizeList(data.salesCost),
+      purchaseUsageMap: {}
+    };
   }
 
   return out;

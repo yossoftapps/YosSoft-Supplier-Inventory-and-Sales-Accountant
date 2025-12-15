@@ -75,14 +75,16 @@ async function main() {
     const netSalesResult = calculateNetSales(allSales, salesReturns, normalizedData.sales[0]);
     const physicalInventoryResult = processPhysicalInventory(normalizedData.physicalInventory);
     const excessInventoryResult = calculateExcessInventory(normalizedData.physicalInventory, normalizedData.sales);
-    const endingInventoryResult = calculateEndingInventory(netPurchasesResult, physicalInventoryResult, excessInventoryResult);
-    const salesCostResult = calculateSalesCost(netPurchasesResult, netSalesResult);
-    const suppliersPayablesResult = calculateSupplierPayables(normalizedData.supplierbalances, endingInventoryResult.endingInventoryList);
-
+    
+    // Prepare combined lists
     const netPurchasesCombined = [ ...(netPurchasesResult.netPurchasesList || []), ...(netPurchasesResult.orphanReturnsList || []) ];
     const netSalesCombined = [ ...(netSalesResult.netSalesList || []), ...(netSalesResult.orphanReturnsList || []) ];
+    
+    // Calculate reports in correct order
+    const endingInventoryResult = calculateEndingInventory(netPurchasesCombined, physicalInventoryResult.listE, excessInventoryResult);
+    const salesCostResult = calculateSalesCost(netPurchasesCombined, netSalesCombined);
+    const suppliersPayablesResult = calculateSupplierPayables(normalizedData.supplierbalances, endingInventoryResult.endingInventoryList);
     const bookInventoryResult = calculateBookInventory(netPurchasesCombined, netSalesCombined);
-
     console.log('\n=== Processing Summary ===');
     console.log('Net Purchases List:', netPurchasesResult.netPurchasesList?.length || 0);
     console.log('Net Purchases Orphan Returns:', netPurchasesResult.orphanReturnsList?.length || 0);

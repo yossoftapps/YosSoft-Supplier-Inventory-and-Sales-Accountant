@@ -48,7 +48,7 @@ function SupplierMovementPage({ data }) {
             };
         });
     }, [supplierInventory, salesMap]);
-    
+
     // 6. تصفية الاصناف المعدة للإرجاع
     const returnableInventoryData = useMemo(() => {
         return detailedInventoryData.filter(item => item['بيان الحركة'] === 'راكد تماما' || item['بيان الحركة'] === 'مخزون زائد' || item['بيان الصلاحية'] === 'منتهي' || item['بيان الصلاحية'] === 'قريب جدا');
@@ -61,18 +61,22 @@ function SupplierMovementPage({ data }) {
         { title: 'رمز المادة', dataIndex: 'رمز المادة', key: 'رمز المادة', width: 120 },
         { title: 'اسم المادة', dataIndex: 'اسم المادة', key: 'اسم المادة' },
         { title: 'الوحدة', dataIndex: 'الوحدة', key: 'الوحدة', width: 80, align: 'center' },
-        { title: 'الكمية', dataIndex: 'الكمية', key: 'الكمية', width: 100, align: 'left',
+        {
+            title: 'الكمية', dataIndex: 'الكمية', key: 'الكمية', width: 100, align: 'left',
             render: (text) => formatQuantity(text)
         },
-        { title: 'افرادي الشراء', dataIndex: 'افرادي', key: 'افرادي', width: 90, align: 'left',
+        {
+            title: 'الافرادي', dataIndex: 'الافرادي', key: 'الافرادي', width: 90, align: 'left',
             render: (text) => formatMoney(text)
         },
-        { title: 'اجمالي الشراء', dataIndex: 'الاجمالي', key: 'الاجمالي', width: 110, align: 'left',
+        {
+            title: 'اجمالي الشراء', dataIndex: 'الاجمالي', key: 'الاجمالي', width: 110, align: 'left',
             render: (text) => formatMoney(text)
         },
         { title: 'تاريخ الصلاحية', dataIndex: 'تاريخ الصلاحية', key: 'تاريخ الصلاحية', width: 120 },
         { title: 'عمر الصنف', dataIndex: 'عمر الصنف', key: 'عمر الصنف', width: 100, align: 'center' },
-        { title: 'مبيعات الصنف', dataIndex: 'مبيعات الصنف', key: 'مبيعات الصنف', width: 100, align: 'left',
+        {
+            title: 'مبيعات الصنف', dataIndex: 'مبيعات الصنف', key: 'مبيعات الصنف', width: 100, align: 'left',
             render: (text) => formatQuantity(text)
         },
         { title: 'بيان الصلاحية', dataIndex: 'بيان الصلاحية', key: 'بيان الصلاحية', width: 100, align: 'center' },
@@ -117,7 +121,7 @@ function SupplierMovementPage({ data }) {
                         <Row gutter={16}>
                             <Col span={4}><strong>رصيد المورد:</strong></Col>
                             <Col span={4}>{formatMoney(parseInt(selectedSupplierPayable['الرصيد'] || 0))}</Col>
-                            
+
                             <Col span={4}><strong>قيمة المخزون:</strong></Col>
                             <Col span={4}>{formatMoney(parseInt(selectedSupplierPayable['قيمة المخزون'] || 0))}</Col>
 

@@ -1,21 +1,56 @@
-import React from 'react';
-import { Typography, Table, Alert } from 'antd';
+import React, { useState, useMemo, useCallback } from 'react';
+import { Alert, Table } from 'antd';
 import { formatQuantity, formatMoney } from '../utils/financialCalculations.js';
-import PrintExportButtons from '../components/PrintExportButtons';
+import UnifiedPageLayout from '../components/UnifiedPageLayout';
+import UnifiedTable from '../components/UnifiedTable';
+import UnifiedAlert from '../components/UnifiedAlert';
+import { useTranslation } from 'react-i18next';
 
-const { Title } = Typography;
 
-function BookInventoryPage({ data }) {
+
+function BookInventoryPage({ data, allReportsData }) {
+    const { t } = useTranslation();
+    const [columnVisibility, setColumnVisibility] = useState({});
+    const [sortOrder, setSortOrder] = useState({});
+    const [pagination, setPagination] = useState({ pageSize: 50 });
+
     if (!data) {
         return (
-            <div style={{ padding: '20px' }}>
-                <Alert message="لا توجد بيانات" description="يرجى استيراد ملف Excel اولاً لمعالجة البيانات." type="info" showIcon />
+            <div className="padding-lg">
+                <UnifiedAlert message={t('noData')} description={t('importExcelFirst')} />
             </div>
         );
     }
 
+    // Apply sorting to data
+    const sortedData = useMemo(() => {
+        if (!sortOrder.field || !sortOrder.order) {
+            return data;
+        }
+
+        return [...data].sort((a, b) => {
+            const aValue = a[sortOrder.field];
+            const bValue = b[sortOrder.field];
+            
+            if (aValue == null && bValue == null) return 0;
+            if (aValue == null) return sortOrder.order === 'asc' ? -1 : 1;
+            if (bValue == null) return sortOrder.order === 'asc' ? 1 : -1;
+            
+            // Handle numeric values
+            const aNum = parseFloat(aValue);
+            const bNum = parseFloat(bValue);
+            if (!isNaN(aNum) && !isNaN(bNum)) {
+                return sortOrder.order === 'asc' ? aNum - bNum : bNum - aNum;
+            }
+            
+            // Handle string values
+            const comparison = String(aValue).localeCompare(String(bValue));
+            return sortOrder.order === 'asc' ? comparison : -comparison;
+        });
+    }, [data, sortOrder]);
+
     // تم تعريف الاعمدة بناءً على المخرجات النهائية للمنطق المحدث
-    const columns = [
+    const allColumns = [
         { title: 'م', dataIndex: 'م', key: 'م', width: 60, align: 'center' },
         { title: 'رمز المادة', dataIndex: 'رمز المادة', key: 'رمز المادة', width: 120 },
         { title: 'اسم المادة', dataIndex: 'اسم المادة', key: 'اسم المادة' },
@@ -39,41 +74,66 @@ function BookInventoryPage({ data }) {
         },
     ];
 
+    // Filter columns based on visibility settings
+    const visibleColumns = allColumns.filter(col => 
+        columnVisibility[col.dataIndex || col.key] !== false
+    );
+
+    // Stable callbacks using useCallback to prevent infinite loops
+    const handleColumnVisibilityChange = useCallback((newVisibility) => {
+        setColumnVisibility(newVisibility);
+    }, []);
+
+    const handleSortOrderChange = useCallback((newSortOrder) => {
+        setSortOrder(newSortOrder);
+    }, []);
+
+    const handlePaginationChange = useCallback((newPagination) => {
+        setPagination(newPagination);
+    }, []);
+
     return (
-        <div style={{ padding: '20px' }}>
-            <Title level={4}>تقرير الجرد الدفتري</Title>
-            <p>عرض نتيجة مطابقة صافي المبيعات مع صافي المشتريات حسب المفاتيح الاربعة المحددة.</p>
-
-            {/* Print/Export buttons */}
-            <PrintExportButtons 
-                data={data}
-                title="تقرير الجرد الدفتري"
-                columns={columns}
-                filename="book-inventory"
-            />
-
-            <Table
-                title={() => <strong>الجرد الدفتري ({data.length} سجل)</strong>}
-                dataSource={data}
-                columns={columns}
+        <UnifiedPageLayout
+            title={t('bookInventory')}
+            description="عرض نتيجة مطابقة صافي المبيعات مع صافي المشتريات حسب المفاتيح الاربعة المحددة."
+            data={sortedData}
+            columns={visibleColumns}
+            filename="book-inventory"
+            allReportsData={allReportsData}
+            reportKey="bookInventory"
+            onColumnVisibilityChange={handleColumnVisibilityChange}
+            onSortOrderChange={handleSortOrderChange}
+            onPaginationChange={handlePaginationChange}
+            pagination={pagination}
+        >
+            <UnifiedTable
+                dataSource={sortedData}
+                columns={visibleColumns}
                 rowKey="م"
+                title={`${t('bookInventory')} (${sortedData.length} ${t('records')})`}
                 scroll={{ x: 1800 }}
-                pagination={{ pageSize: 25 }}
+                size="middle"
+                pagination={{ 
+                    position: ['topRight', 'bottomRight'], 
+                    pageSize: pagination.pageSize, 
+                    showSizeChanger: true, 
+                    pageSizeOptions: ['25', '50', '100', '200'] 
+                }}
                 summary={() => (
                     <Table.Summary.Row>
                         <Table.Summary.Cell index={0} colSpan={4}>
-                            <strong>الإجمالي</strong>
+                            <strong className="unified-table-summary">{t('total')}</strong>
                         </Table.Summary.Cell>
                         <Table.Summary.Cell index={4}>
-                            <strong>
-                                {formatQuantity(data.reduce((sum, record) => sum + parseFloat(record['الكمية'] || 0), 0))}
+                            <strong className="unified-table-summary">
+                                {formatQuantity(sortedData.reduce((sum, record) => sum + parseFloat(record['الكمية'] || 0), 0))}
                             </strong>
                         </Table.Summary.Cell>
                         <Table.Summary.Cell index={5} colSpan={7}></Table.Summary.Cell>
                     </Table.Summary.Row>
                 )}
             />
-        </div>
+        </UnifiedPageLayout>
     );
 }
 
