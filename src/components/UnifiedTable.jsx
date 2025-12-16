@@ -9,10 +9,10 @@ import '../assets/styles/unified-table-extra.css'; // Import the new CSS
 
 // --- Resizable Header Component ---
 const ResizableTitle = (props) => {
-  const { onResize, width, ...restProps } = props;
+  const { onResize, width, as: Element = 'th', ...restProps } = props;
 
   if (!width) {
-    return <th {...restProps} />;
+    return <Element {...restProps} />;
   }
 
   return (
@@ -22,7 +22,7 @@ const ResizableTitle = (props) => {
       onResize={onResize}
       draggableOpts={{ enableUserSelectHack: false }}
     >
-      <th {...restProps} />
+      <Element {...restProps} />
     </Resizable>
   );
 };
@@ -201,7 +201,7 @@ const UnifiedTable = forwardRef(({
         return (
           <DragableHeaderCell id={id} index={index} moveColumn={moveColumn} {...restProps}>
             {/* Only make title resizable if width is provided */}
-            <ResizableTitle onResize={onResize} width={width} {...restProps}>
+            <ResizableTitle onResize={onResize} width={width} as="div" {...restProps}>
                 {restProps.children}
             </ResizableTitle>
           </DragableHeaderCell>

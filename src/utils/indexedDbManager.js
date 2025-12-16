@@ -1,6 +1,8 @@
 // IndexedDB Manager for Persistent Caching
 // Provides a robust caching solution using IndexedDB for large datasets
 
+import { serializeData } from './financialCalculations';
+
 /**
  * IndexedDB Manager Class
  * Provides persistent caching capabilities using IndexedDB
@@ -164,9 +166,12 @@ export class IndexedDbManager {
       const transaction = this.db.transaction([storeName], 'readwrite');
       const store = transaction.objectStore(storeName);
       
+      // Serialize the value to ensure it's compatible with IndexedDB
+      const serializedValue = serializeData(value);
+      
       const item = {
         id: key,
-        value: value,
+        value: serializedValue,
         createdAt: Date.now(),
         expires: ttl ? Date.now() + ttl : null
       };
@@ -488,8 +493,11 @@ export class CacheManager {
     // Fallback to localStorage if available
     if (this.isLocalStorageSupported) {
       try {
+        // Serialize the value to ensure it's compatible with localStorage
+        const serializedValue = serializeData(value);
+        
         const item = {
-          value: value,
+          value: serializedValue,
           createdAt: Date.now(),
           expires: ttl ? Date.now() + ttl : null
         };
