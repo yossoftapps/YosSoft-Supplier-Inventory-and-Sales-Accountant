@@ -9,7 +9,26 @@
     "dev": "vite",
     "build": "vite build",
     "electron": "electron .",
-    "electron-dev": "concurrently -k \"npm run dev\" \"node start-electron.cjs\""
+    "electron-dev": "concurrently -k \"npm run dev\" \"node start-electron.cjs\"",
+    "export:processed-data": "node scripts/export-processed-data.js",
+    "test:preparing-returns": "node scripts/test-preparing-returns.js",
+    "test:e2e-preparing-returns": "node scripts/test-e2e-preparing-returns.js",
+    "test:e2e-ideal-replenishment": "node scripts/test-e2e-ideal-replenishment.js",
+    "test:e2e-export": "node scripts/test-e2e-export.js",
+    "test:export": "node scripts/test-export-columns.js",
+    "test:net-purchases": "node scripts/test-net-purchases.js",
+    "test:net-purchases-logic": "node scripts/test-net-purchases-logic.js",
+    "test:net-sales": "node scripts/test-net-sales.js",
+    "test:net-sales-logic": "node scripts/test-net-sales-logic.js",
+    "test:book-inventory-logic": "node scripts/test-book-inventory-logic.js",
+    "test:sales-cost-logic": "node scripts/test-sales-cost-logic.js",
+    "test:excess-inventory": "node scripts/test-excess-inventory.js",
+    "test:item-profitability": "node scripts/test-item-profitability.js",
+    "test:expiry-risk": "node scripts/test-expiry-risk.js",
+    "test:supplier-due": "node scripts/test-supplier-due.js",
+    "test:ending-inventory": "node scripts/test-ending-inventory.js",
+    "test:new-items-performance": "node scripts/test-new-items-performance.js",
+    "test:ideal-replenishment": "node scripts/test-ideal-replenishment.js"
   },
   "keywords": [
     "accounting",
@@ -24,6 +43,8 @@
     "antd": "^5.29.1",
     "decimal.js": "^10.6.0",
     "i18next": "^25.7.2",
+    "jspdf": "^4.0.0",
+    "numeral": "^2.0.6",
     "react": "^18.3.1",
     "react-dnd": "^16.0.1",
     "react-dnd-html5-backend": "^16.0.1",
@@ -32,14 +53,21 @@
     "react-resizable": "^3.0.5",
     "react-window": "^2.2.3",
     "recharts": "^3.5.1",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "yup": "^1.7.1"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.7.0",
     "concurrently": "^8.2.2",
     "electron": "^28.3.3",
+    "puppeteer": "^24.34.0",
+    "rollup-plugin-visualizer": "^6.0.5",
     "terser": "^5.44.1",
     "vite": "^5.4.21",
     "wait-on": "^7.2.0"
-  }
+  },
+  "nodeOptions": [
+    "--expose-gc",
+    "--max-old-space-size=4096"
+  ]
 }

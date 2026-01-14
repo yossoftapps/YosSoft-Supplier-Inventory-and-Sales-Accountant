@@ -1,6 +1,16 @@
 const { app, BrowserWindow, ipcMain, dialog, session } = require('electron');
 const path = require('path');
 const XLSX = require('xlsx');
+const fs = require('fs');
+
+// Enable garbage collection API for memory management
+app.commandLine.appendSwitch('js-flags', '--expose-gc');
+
+// Set memory limits
+app.commandLine.appendSwitch('max-old-space-size', '4096');
+
+// Additional memory management settings
+app.commandLine.appendSwitch('enable-features', 'V8OptimizeForSize');
 
 //
 
@@ -97,6 +107,55 @@ ipcMain.handle('readExcelFile', async (event, filePath) => {
   }
 });
 
+// حفظ البيانات في ملف (نسخ احتياطي أو تصدير)
+ipcMain.handle('saveFile', async (event, { content, fileName, extension }) => {
+  try {
+    const { canceled, filePath } = await dialog.showSaveDialog({
+      title: 'حفظ الملف',
+      defaultPath: path.join(app.getPath('documents'), `${fileName}.${extension}`),
+      filters: [{ name: 'All Files', extensions: [extension] }]
+    });
+
+    if (canceled) return { success: false, canceled: true };
+
+    fs.writeFileSync(filePath, content);
+    return { success: true, filePath };
+  } catch (error) {
+    console.error('Error saving file:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// حفظ نسخة احتياطية صامتة (في مجلد التطبيق)
+ipcMain.handle('saveSilentBackup', async (event, { content, fileName }) => {
+  try {
+    const backupDir = path.join(app.getPath('userData'), 'backups');
+    if (!fs.existsSync(backupDir)) {
+      fs.mkdirSync(backupDir, { recursive: true });
+    }
+
+    const filePath = path.join(backupDir, fileName);
+    fs.writeFileSync(filePath, content);
+
+    // الحفاظ على آخر 10 نسخ فقط
+    const files = fs.readdirSync(backupDir)
+      .filter(f => f.startsWith('backup_'))
+      .map(f => ({ name: f, time: fs.statSync(path.join(backupDir, f)).mtime.getTime() }))
+      .sort((a, b) => b.time - a.time);
+
+    if (files.length > 10) {
+      for (let i = 10; i < files.length; i++) {
+        fs.unlinkSync(path.join(backupDir, files[i].name));
+      }
+    }
+
+    return { success: true, filePath };
+  } catch (error) {
+    console.error('Error silent backup:', error);
+    return { success: false, error: error.message };
+  }
+});
+
 // =================================================================
 // دوال إدارة النوافذ واحداث التطبيق
 // =================================================================
@@ -160,13 +219,13 @@ app.whenReady().then(() => {
   });
 
   const mainWindow = createWindow();
-  
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
     }
   });
-  
+
   // Return the mainWindow to keep a reference
   return mainWindow;
 });

@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Row, Col, Typography, Divider, Progress, Card, Button, message, Alert, Upload } from 'antd';
+import React, { useState, useMemo } from 'react';
+import { Row, Col, Typography, Progress, Card, Button, message } from 'antd';
 import {
   ShoppingOutlined,
   FundViewOutlined,
@@ -9,45 +9,28 @@ import {
   RiseOutlined,
   FallOutlined,
   BarChartOutlined,
-  FileExcelOutlined,
-  UploadOutlined,
   ClockCircleOutlined
 } from '@ant-design/icons';
-import { formatMoney } from '../utils/financialCalculations';
+import { formatMoney } from '../utils/financialCalculations.js';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import UnifiedPageLayout from './UnifiedPageLayout';
 import UnifiedCard from './UnifiedCard';
 import DashboardWidgets from './DashboardWidgets';
+import ApplicationPerformance from './ApplicationPerformance';
 
-// Import logic functions
-import { calculateNetPurchases } from '../logic/netPurchasesLogic';
-import { calculateNetSales } from '../logic/netSalesLogic';
-import { processPhysicalInventory } from '../logic/physicalInventoryLogic';
-import { calculateExcessInventory } from '../logic/excessInventoryLogic';
-import { calculateEndingInventory } from '../logic/endingInventoryLogic';
-import { calculateSalesCost } from '../logic/salesCostLogic';
-import { calculateSupplierPayables } from '../logic/supplierPayablesLogic';
-import { calculateBookInventory } from '../logic/bookInventoryLogic';
-import { calculateAbnormalItems } from '../logic/abnormalItemsLogic';
-import { calculateMainAccountsSummary } from '../logic/mainAccountsLogic';
-import { enrichNetPurchases } from '../logic/enrichmentLogic';
-import { checkDataSufficiency } from '../logic/dataSufficiencyChecker';
-import { checkFinancialDataIntegrity } from '../logic/financialIntegrityChecker';
 
-// Import validation functions
-import { validateAllTables, normalizeData } from '../validator/schemaValidator';
 
 const { Title, Text } = Typography;
 
 // Colors for charts
-const COLORS = ['#1890ff', '#52c41a', '#faad14', '#722ed1', '#f5222d', '#eb2f96'];
-const PIE_COLORS = ['#1890ff', '#52c41a', '#faad14', '#722ed1', '#f5222d', '#eb2f96'];
+const COLORS = ['#2563eb', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#06b6d4'];
+const PIE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#06b6d4'];
 
 import companyLogo from '../assets/images/logo.png';
 
-const Dashboard = ({ monetaryTotals, reportCounts, processedData, advancedReports, onDataProcessed }) => {
+const Dashboard = ({ monetaryTotals, reportCounts, processedData, advancedReports }) => {
   const [isLoading, setIsLoading] = useState(false);
-  
+
   // Get last updated time
   const lastUpdated = new Date().toLocaleString('ar-SA', {
     year: 'numeric',
@@ -57,10 +40,6 @@ const Dashboard = ({ monetaryTotals, reportCounts, processedData, advancedReport
     minute: '2-digit'
   });
 
-  // Colors
-  const COLORS = ['#2563eb', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#06b6d4'];
-  const PIE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#06b6d4'];
-
   // --- Insight Calculations ---
 
   // Defensive checks for data
@@ -69,108 +48,54 @@ const Dashboard = ({ monetaryTotals, reportCounts, processedData, advancedReport
   const safeProcessedData = processedData || {};
   const safeAdvancedReports = advancedReports || {};
 
-  // 1. Top Selling Items (by Quantity)
-  const topSellingItems = (safeProcessedData?.netSales?.netSalesList || [])
-    .sort((a, b) => (parseFloat(b['الكمية']) || 0) - (parseFloat(a['الكمية']) || 0))
-    .slice(0, 5);
+  // --- Insight Calculations - Optimized with useMemo ---
+
+  // 1. Top Selling Items (by Quantity) - O(n log n) but computed only when data changes
+  const topSellingItems = React.useMemo(() => {
+    return (safeProcessedData?.netSales?.netSalesList || [])
+      .slice() // create a shallow copy before sorting
+      .sort((a, b) => (parseFloat(b['الكمية']) || 0) - (parseFloat(a['الكمية']) || 0))
+      .slice(0, 5);
+  }, [safeProcessedData?.netSales?.netSalesList]);
 
   // 2. Critical Risk Items (Expired or Stagnant)
-  // Combining Expiry Risk and Stagnation Risk if available
-  const riskItems = [
-    ...(safeAdvancedReports?.expiryRisk || []).map(i => ({ ...i, type: 'Expiry', severity: 'High' })),
-    ...(safeAdvancedReports?.stagnationRisk || []).map(i => ({ ...i, type: 'Stagnant', severity: 'Medium' }))
-  ].sort((a, b) => b.severity === 'High' ? 1 : -1).slice(0, 5);
+  const riskItems = React.useMemo(() => {
+    const items = [
+      ...(safeAdvancedReports?.expiryRisk || []).map(i => ({ ...i, type: 'Expiry', severity: 'High' })),
+      ...(safeAdvancedReports?.stagnationRisk || []).map(i => ({ ...i, type: 'Stagnant', severity: 'Medium' }))
+    ];
+    return items.sort((a, b) => b.severity === 'High' ? 1 : -1).slice(0, 5);
+  }, [safeAdvancedReports?.expiryRisk, safeAdvancedReports?.stagnationRisk]);
 
   // Prepare data for bar chart
-  const financialData = [
+  const financialData = React.useMemo(() => [
     { name: 'المشتريات', value: safeMonetaryTotals.netPurchases || 0 },
     { name: 'المبيعات', value: safeMonetaryTotals.netSales || 0 },
     { name: 'المخزون', value: safeMonetaryTotals.endingInventory || 0 },
     { name: 'الاستحقاق', value: safeMonetaryTotals.suppliersPayables || 0 },
-  ];
+  ], [safeMonetaryTotals]);
 
   // Prepare data for pie chart
-  const distributionData = [
+  const distributionData = React.useMemo(() => [
     { name: 'سجلات المشتريات', value: safeReportCounts.netPurchases || 0 },
     { name: 'سجلات المبيعات', value: safeReportCounts.netSales || 0 },
     { name: 'سجلات المخزون', value: safeReportCounts.endingInventory || 0 },
     { name: 'أصناف المخاطر', value: (safeReportCounts.expiryRisk || 0) + (safeReportCounts.stagnationRisk || 0) }
-  ].filter(item => item.value > 0);
+  ].filter(item => item.value > 0), [safeReportCounts]);
 
   // KPI Calculations
-  const profitMargin = (safeMonetaryTotals.netSales || 0) > 0
-    ? (((safeMonetaryTotals.netSales || 0) - ((safeMonetaryTotals.netPurchases || 0) * 0.7)) / (safeMonetaryTotals.netSales || 0) * 100).toFixed(1) // Approximate
-    : '0.0';
+  const profitMargin = React.useMemo(() => {
+    return (safeMonetaryTotals.netSales || 0) > 0
+      ? (((safeMonetaryTotals.netSales || 0) - ((safeMonetaryTotals.netPurchases || 0) * 0.7)) / (safeMonetaryTotals.netSales || 0) * 100).toFixed(1)
+      : '0.0';
+  }, [safeMonetaryTotals.netSales, safeMonetaryTotals.netPurchases]);
 
   return (
     <UnifiedPageLayout
       title="لوحة القيادة المركزية"
       description={`نظرة شاملة على الأداء المالي والمخزوني والتشغيلي • آخر تحديث: ${lastUpdated}`}
     >
-      {/* Import Section */}
-      <UnifiedCard
-        title="استيراد البيانات"
-        style={{ marginBottom: 32, background: 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)' }}
-        extra={<UploadOutlined style={{ color: '#2563eb' }} />}
-      >
-        <Row gutter={[16, 16]} align="middle">
-          <Col xs={24} md={16}>
-            <Text type="secondary">
-              قم بتحميل ملفات Excel الخاصة ببيانات المشتريات والمبيعات والمخزون لتحديث النظام
-            </Text>
-          </Col>
-          <Col xs={24} md={8}>
-            <Upload
-              accept=".xlsx,.xls"
-              showUploadList={false}
-              beforeUpload={(file) => {
-                // Handle file upload logic here
-                message.success(`تم تحميل الملف: ${file.name}`);
-                return false; // Prevent automatic upload
-              }}
-            >
-              <Button
-                type="primary"
-                icon={<UploadOutlined />}
-                size="large"
-                style={{ width: '100%' }}
-              >
-                اختر ملف Excel
-              </Button>
-            </Upload>
-          </Col>
-        </Row>
-        <Divider />
-        <Row gutter={[16, 16]}>
-          <Col xs={24} sm={8}>
-            <Button
-              icon={<FileExcelOutlined />}
-              style={{ width: '100%' }}
-              onClick={() => message.info('فتح نافذة استيراد المشتريات')}
-            >
-              استيراد المشتريات
-            </Button>
-          </Col>
-          <Col xs={24} sm={8}>
-            <Button
-              icon={<FileExcelOutlined />}
-              style={{ width: '100%' }}
-              onClick={() => message.info('فتح نافذة استيراد المبيعات')}
-            >
-              استيراد المبيعات
-            </Button>
-          </Col>
-          <Col xs={24} sm={8}>
-            <Button
-              icon={<FileExcelOutlined />}
-              style={{ width: '100%' }}
-              onClick={() => message.info('فتح نافذة استيراد المخزون')}
-            >
-              استيراد المخزون
-            </Button>
-          </Col>
-        </Row>
-      </UnifiedCard>
+
 
       {/* Top Row: Key Performance Indicators (KPIs) */}
       <Row gutter={[24, 24]} style={{ marginBottom: 32 }}>
@@ -188,7 +113,7 @@ const Dashboard = ({ monetaryTotals, reportCounts, processedData, advancedReport
               </div>
               <div>
                 <Text type="secondary" style={{ fontSize: 13 }}>صافي المبيعات</Text>
-                <Title level={3} style={{ margin: 0, color: '#1e293b' }}>{formatMoney(monetaryTotals.netSales)}</Title>
+                <Title level={3} style={{ margin: 0, color: '#1e293b' }}>{formatMoney(safeMonetaryTotals.netSales)}</Title>
               </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center' }}>
@@ -213,7 +138,7 @@ const Dashboard = ({ monetaryTotals, reportCounts, processedData, advancedReport
               </div>
               <div>
                 <Text type="secondary" style={{ fontSize: 13 }}>صافي المشتريات</Text>
-                <Title level={3} style={{ margin: 0, color: '#1e293b' }}>{formatMoney(monetaryTotals.netPurchases)}</Title>
+                <Title level={3} style={{ margin: 0, color: '#1e293b' }}>{formatMoney(safeMonetaryTotals.netPurchases)}</Title>
               </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center' }}>
@@ -238,7 +163,7 @@ const Dashboard = ({ monetaryTotals, reportCounts, processedData, advancedReport
               </div>
               <div>
                 <Text type="secondary" style={{ fontSize: 13 }}>قيمة المخزون</Text>
-                <Title level={3} style={{ margin: 0, color: '#1e293b' }}>{formatMoney(monetaryTotals.endingInventory)}</Title>
+                <Title level={3} style={{ margin: 0, color: '#1e293b' }}>{formatMoney(safeMonetaryTotals.endingInventory)}</Title>
               </div>
             </div>
             <Progress percent={75} size="small" strokeColor="#f59e0b" showInfo={false} />
@@ -260,10 +185,10 @@ const Dashboard = ({ monetaryTotals, reportCounts, processedData, advancedReport
               </div>
               <div>
                 <Text type="secondary" style={{ fontSize: 13 }}>تنبيهات المخاطر</Text>
-                <Title level={3} style={{ margin: 0, color: '#1e293b' }}>{reportCounts.expiryRisk + reportCounts.stagnationRisk}</Title>
+                <Title level={3} style={{ margin: 0, color: '#1e293b' }}>{(safeReportCounts.expiryRisk || 0) + (safeReportCounts.stagnationRisk || 0)}</Title>
               </div>
             </div>
-            <Text type="danger" style={{ fontSize: 12 }}>يتطلب {reportCounts.expiryRisk} عنصر اهتماماً فوريًا</Text>
+            <Text type="danger" style={{ fontSize: 12 }}>يتطلب {safeReportCounts.expiryRisk || 0} عنصر اهتماماً فوريًا</Text>
           </UnifiedCard>
         </Col>
       </Row>
@@ -314,6 +239,13 @@ const Dashboard = ({ monetaryTotals, reportCounts, processedData, advancedReport
               </PieChart>
             </ResponsiveContainer>
           </UnifiedCard>
+        </Col>
+      </Row>
+
+      {/* Application Performance Row */}
+      <Row gutter={[24, 24]} style={{ marginBottom: 32 }}>
+        <Col xs={24}>
+          <ApplicationPerformance />
         </Col>
       </Row>
 

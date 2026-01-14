@@ -1,34 +1,13 @@
 import React, { useState, useCallback, useRef, forwardRef, useEffect } from 'react';
-import { Table } from 'antd';
-import { Resizable } from 'react-resizable';
-import { DndProvider, useDrag, useDrop } from 'react-dnd';
-import { HTML5Backend } from 'react-dnd-html5-backend';
+import { Table, Pagination } from 'antd';
+import { useDrag, useDrop } from 'react-dnd'; // يفترض استخدام DndProvider و HTML5Backend من الخارج
 import SynchronizedHorizontalScrollbar from './SynchronizedHorizontalScrollbar';
+import { applyOptimalWidths, applyOptimalWidth } from '../utils/columnWidthCalculator';
 import '../assets/styles/unified-styles.css';
-import '../assets/styles/unified-table-extra.css'; // Import the new CSS
+import '../assets/styles/unified-table-extra.css';
 
-// --- Resizable Header Component ---
-const ResizableTitle = (props) => {
-  const { onResize, width, as: Element = 'th', ...restProps } = props;
-
-  if (!width) {
-    return <Element {...restProps} />;
-  }
-
-  return (
-    <Resizable
-      width={width}
-      height={0} // Height doesn't matter for column resizing
-      onResize={onResize}
-      draggableOpts={{ enableUserSelectHack: false }}
-    >
-      <Element {...restProps} />
-    </Resizable>
-  );
-};
-
-// --- Draggable Header Component ---
-const DragableHeaderCell = ({ id, index, moveColumn, children, ...restProps }) => {
+// --- مكون خلية الرأس القابلة للسحب ---
+const DragableHeaderCell = ({ id, index, moveColumn, children, align, ...restProps }) => {
   const ref = useRef(null);
   const [{ handlerId }, drop] = useDrop({
     accept: 'column',
@@ -53,9 +32,9 @@ const DragableHeaderCell = ({ id, index, moveColumn, children, ...restProps }) =
       const clientOffset = monitor.getClientOffset();
       const hoverClientX = clientOffset.x - hoverBoundingRect.left;
 
-      // Only perform the move when the mouse has crossed half of the items width
-      // This logic helps prevent flickering during drag operations
-      // For RTL, we need to consider the direction of the hoverX
+      // تنفيذ النقل فقط عندما يتجاوز الماوس نصف عرض العنصر
+      // هذا المنطق يساعد على منع الارتعاش أثناء عمليات السحب
+      // بالنسبة للاتجاه من اليمين لليسار (RTL)، نحتاج لمراعاة اتجاه hoverX
       const isRTL = document.documentElement.dir === 'rtl';
 
       if (isRTL) {
@@ -90,10 +69,17 @@ const DragableHeaderCell = ({ id, index, moveColumn, children, ...restProps }) =
   const opacity = isDragging ? 0 : 1;
   drag(drop(ref));
 
+  // Apply alignment style
+  const cellStyle = {
+    opacity,
+    cursor: 'grab',
+    ...(align ? { textAlign: align } : {})
+  };
+
   return (
     <th
       ref={ref}
-      style={{ opacity, cursor: 'grab' }} // Add grab cursor for draggable columns
+      style={cellStyle} // إضافة مؤشر اليد للأعمدة القابلة للسحب
       data-handler-id={handlerId}
       {...restProps}
     >
@@ -102,197 +88,330 @@ const DragableHeaderCell = ({ id, index, moveColumn, children, ...restProps }) =
   );
 };
 
-
+/**
+ * المكون الموحد للجدول (UnifiedTable)
+ * يوفر ميزات متقدمة مثل السحب والإفلات، التمرير المتزامن، والوضع الافتراضي (Virtualization).
+ */
 const UnifiedTable = forwardRef(({
   dataSource,
-  columns: initialColumns, // Rename to initialColumns
+  columns: initialColumns,
   rowKey,
-  title,
+  title, // ملاحظة: نستخدم هذا لتمثيل الصف الخامس (Row 5)
   summary,
   pagination,
   scroll,
   size = 'small',
   virtualized = false,
-  showHorizontalScrollbars = true,
+  showHorizontalScrollbars = true, // تفعيل الشريط العلوي والسفلي افتراضيًا بناءً على طلب المستخدم
+  onRowSelection,
+  headerExtra, // يمرر من UnifiedPageLayout (تبوابات التنقل)
+  onPaginationChange,
+  useDynamicWidths = false, // Dynamic widths are disabled by default
   ...restProps
 }, ref) => {
   const tableRef = useRef(null);
   const [columns, setColumns] = useState(initialColumns);
+  const [selectedRowKeys, setSelectedRowKeys] = useState([]);
 
-  // Update columns when initialColumns prop changes (e.g., from parent)
+  // تحديث الأعمدة عند تغير خاصية initialColumns أو عند تغير البيانات
   useEffect(() => {
-    setColumns(initialColumns);
-  }, [initialColumns]);
+    if (useDynamicWidths && dataSource && dataSource.length > 0) {
+      // Apply dynamic widths based on data content
+      const optimizedColumns = applyOptimalWidths(initialColumns, dataSource);
+      setColumns(optimizedColumns);
+    } else {
+      setColumns(initialColumns);
+    }
+  }, [initialColumns, dataSource, useDynamicWidths]);
 
-  // Default pagination settings
+  // إعدادات الترحيل الافتراضية (Pagination)
   const defaultPagination = {
-    position: ['topRight', 'bottomRight'],
+    position: ['bottomRight'], // إزالة الترحيل العلوي ليتم التعامل معه يدويًا في الصف 5
     pageSize: 100,
+    hideOnSinglePage: false, // ضمان ظهور الترحيل دائمًا حتى لو صفحة واحدة
+    pageSizeOptions: ['50', '100', '200', '500'],
+    showTotal: (total, range) => (
+      <span className="unified-pagination-total">
+        {range[0]}-{range[1]} من {total} سجل
+      </span>
+    ),
     showSizeChanger: true,
-    pageSizeOptions: ['25', '50', '100', '200'],
-    showTotal: (total, range) => `${range[0]}-${range[1]} من ${total} عنصر`,
     ...pagination
   };
 
-  // Default scroll settings
+  const currentPagination = {
+    ...defaultPagination,
+    ...pagination,
+    position: ['bottomRight'] // تجاهل أي موضع ممرر لضمان عدم وجود تكرار في الأعلى
+  };
+
+  // التحكم في الوضع الافتراضي (Virtualization) يعتمد كليًا على المكون الأب
+  // تم إزالة الشرط التلقائي (dataSource.length > 150) الذي كان يسبب اختفاء الترقيق
+  const isVirtualized = virtualized;
+
+  // عرض الترحيل إذا لم يتم تعطيله صراحةً ولم يكن في وضع Virtualization
+  const showPagination = pagination !== false && !isVirtualized;
+
+  // إعدادات التمرير الافتراضية
   const defaultScroll = {
     x: 1500,
     y: 600,
     ...scroll
   };
 
-  // --- Resizing Logic ---
-  const handleResize = useCallback(
-    (index) => (e, { size }) => {
-      setColumns((prevColumns) => {
-        const nextColumns = [...prevColumns];
-        nextColumns[index] = {
-          ...nextColumns[index],
-          width: size.width,
+  // --- منطق مزامنة التمرير (Synchronized Scroll) ---
+  const tableContainerRef = useRef(null);
+  const topScrollRef = useRef(null);
+  const bottomScrollRef = useRef(null);
+
+  useEffect(() => {
+    // إذا لم يتم عرض أشرطة التمرير الأفقية، فلا تفعل شيئًا
+    if (!showHorizontalScrollbars) return;
+
+    const container = tableContainerRef.current;
+    if (!container) return;
+
+    const topScroll = topScrollRef.current;
+    const bottomScroll = bottomScrollRef.current;
+
+    let tableBody = null;
+    let observerCleanup = null;
+    let scrollListenersCleanup = null;
+    let timeoutId = null;
+
+    // وظيفة لتهيئة مزامنة التمرير
+    const initializeSync = () => {
+      if (tableBody) {
+        // تحديث عرض شريط التمرير بناءً على عرض محتوى الجدول
+        const updateScrollWidth = () => {
+          const scrollWidth = tableBody.scrollWidth;
+          if (topScroll?.firstChild) topScroll.firstChild.style.width = `${scrollWidth}px`;
+          if (bottomScroll?.firstChild) bottomScroll.firstChild.style.width = `${scrollWidth}px`;
         };
-        return nextColumns;
-      });
-    },
-    []
-  );
 
-  // --- Dragging Logic ---
-  const moveColumn = useCallback(
-    (dragIndex, hoverIndex) => {
-      setColumns((prevColumns) => {
-        const dragColumn = prevColumns[dragIndex];
-        const newColumns = [...prevColumns];
-        newColumns.splice(dragIndex, 1); // Remove the dragged column
-        newColumns.splice(hoverIndex, 0, dragColumn); // Insert it at the new position
-        return newColumns;
-      });
-    },
-    []
-  );
+        updateScrollWidth(); // تحديث مبدئي
+        // مراقبة تغيير حجم جسم الجدول لتحديث عرض شريط التمرير
+        const resizeObserver = new ResizeObserver(updateScrollWidth);
+        resizeObserver.observe(tableBody);
 
-  // Map columns to include resizing and dragging props
+        let isSyncing = false;
+        // وظيفة لمزامنة التمرير بين العناصر
+        const syncScroll = (source, targets) => {
+          if (isSyncing) return; // منع التكرار اللانهائي
+          isSyncing = true;
+          targets.forEach(target => {
+            if (target && target !== source) {
+              target.scrollLeft = source.scrollLeft;
+            }
+          });
+          isSyncing = false;
+        };
+
+        // معالجات أحداث التمرير
+        const handleTableScroll = (e) => syncScroll(e.target, [topScroll, bottomScroll]);
+        const handleTopScroll = (e) => syncScroll(e.target, [tableBody, bottomScroll]);
+        const handleBottomScroll = (e) => syncScroll(e.target, [tableBody, topScroll]);
+
+        // إضافة مستمعي الأحداث
+        tableBody.addEventListener('scroll', handleTableScroll);
+        if (topScroll) topScroll.addEventListener('scroll', handleTopScroll);
+        if (bottomScroll) bottomScroll.addEventListener('scroll', handleBottomScroll);
+
+        // وظيفة لتنظيف مستمعي الأحداث ومراقب الحجم
+        scrollListenersCleanup = () => {
+          tableBody.removeEventListener('scroll', handleTableScroll);
+          if (topScroll) topScroll.removeEventListener('scroll', handleTopScroll);
+          if (bottomScroll) bottomScroll.removeEventListener('scroll', handleBottomScroll);
+          resizeObserver.disconnect();
+        };
+      }
+    };
+
+    // وظيفة للبحث عن عنصر جسم الجدول
+    const findTableBody = () => {
+      const selectors = [
+        '.ant-table-body',
+        '.ant-table-container .ant-table-content',
+        '.ant-table-content',
+        '.ant-table-tbody'
+      ];
+      for (const selector of selectors) {
+        const element = container.querySelector(selector);
+        if (element) return element;
+      }
+      return null;
+    };
+
+    tableBody = findTableBody();
+    if (tableBody) {
+      initializeSync(); // إذا تم العثور على جسم الجدول، قم بالتهيئة فورًا
+    } else {
+      // إذا لم يتم العثور على جسم الجدول، استخدم MutationObserver لمراقبته
+      const mutationObserver = new MutationObserver(() => {
+        tableBody = findTableBody();
+        if (tableBody) {
+          initializeSync();
+          mutationObserver.disconnect(); // بمجرد العثور عليه، افصل المراقب
+        }
+      });
+      mutationObserver.observe(container, { childList: true, subtree: true });
+      observerCleanup = () => mutationObserver.disconnect();
+      // إضافة مهلة زمنية لضمان التنظيف في حالة عدم العثور على جسم الجدول
+      timeoutId = setTimeout(() => {
+        if (observerCleanup) observerCleanup();
+        const finalCheck = findTableBody();
+        if (finalCheck) {
+          tableBody = finalCheck;
+          initializeSync();
+        }
+      }, 5000); // مهلة 5 ثوانٍ
+    }
+
+    // وظيفة التنظيف عند إلغاء تحميل المكون
+    return () => {
+      if (observerCleanup) observerCleanup();
+      if (scrollListenersCleanup) scrollListenersCleanup();
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [showHorizontalScrollbars, dataSource?.length, columns?.length]); // إعادة التشغيل عند تغيير هذه الخصائص
+
+  // --- منطق السحب ---
+  const moveColumn = useCallback((dragIndex, hoverIndex) => {
+    setColumns((prevColumns) => {
+      const dragColumn = prevColumns[dragIndex];
+      const newColumns = [...prevColumns];
+      newColumns.splice(dragIndex, 1);
+      newColumns.splice(hoverIndex, 0, dragColumn);
+      return newColumns;
+    });
+  }, []);
+
   const mergedColumns = columns.map((col, index) => {
-    // Only make columns resizable if they have a width defined
-    const resizableProps = col.width ? {
-      width: col.width,
-      onResize: handleResize(index),
-    } : {};
-
+    let columnWidth = col.width;
+    if (useDynamicWidths && !col.width && dataSource && dataSource.length > 0) {
+      const optimizedCol = applyOptimalWidth(col, dataSource);
+      columnWidth = optimizedCol.width;
+    }
+    
     return {
       ...col,
+      width: columnWidth,
+      align: col.align,
       onHeaderCell: (column) => ({
-        ...resizableProps, // Spread resizable props if applicable
-        id: column.key || column.dataIndex, // Unique ID for draggable
+        id: column.key || column.dataIndex,
         index: index,
         moveColumn: moveColumn,
-        ...column.onHeaderCell, // Preserve existing onHeaderCell props if any
+        align: col.align,
+        ...column.onHeaderCell,
       }),
     };
   });
 
-  // Define custom components for the Ant Design Table
   const components = {
     header: {
-      cell: (props) => {
-        // We need to pass the resizable and draggable props to the custom cell
-        const { onResize, width, id, index, moveColumn, ...restProps } = props;
-        
-        // Render DragableHeaderCell which then wraps ResizableTitle
-        return (
-          <DragableHeaderCell id={id} index={index} moveColumn={moveColumn} {...restProps}>
-            {/* Only make title resizable if width is provided */}
-            <ResizableTitle onResize={onResize} width={width} as="div" {...restProps}>
-                {restProps.children}
-            </ResizableTitle>
-          </DragableHeaderCell>
-        );
-      },
+      cell: DragableHeaderCell,
     },
   };
 
+  // الصف الخامس: تبويبات التنقل + الترحيل + معلومات الصفحة
+  const renderRow5 = () => {
+    // تحديد العدد الإجمالي للترحيل اليدوي
+    const total = currentPagination.total !== undefined ? currentPagination.total : (dataSource?.length || 0);
 
-  // If virtualized is enabled and we have sufficient data, use virtual scrolling
-  if (virtualized && dataSource && dataSource.length > 1000) {
-    const tableElement = (
+    // إذا لم يكن هناك تبويبات تنقل (headerExtra) والترحيل مخفي/معطل، لا تعرض هذا الصف
+    if (!headerExtra && !showPagination) return null;
+
+    return (
+      <div className="unified-row-5-container" style={{
+        display: 'flex',
+        justifyContent: 'flex-start', // لضمان ظهور الترقيق بجانب التبويبات وتجنب اختفائه مع التمرير
+        alignItems: 'center',
+        marginBottom: '8px',
+        marginTop: '4px',
+        flexWrap: 'wrap',
+        gap: '12px',
+        padding: '0 4px',
+        width: '100%' // ضمان أخذ العرض الكامل 100%
+      }}>
+        {/* الجهة اليمنى (في العربية): تبويبات التنقل أو العناصر الإضافية */}
+        <div className="unified-row-5-right-content" style={{ flex: '1', minWidth: '200px' }}>
+          {headerExtra}
+        </div>
+
+        {/* الجهة اليسرى (في العربية): أدوات التحكم في الترحيل */}
+        <div className="unified-row-5-left-content" style={{ flexShrink: 0 }}>
+          {showPagination && (
+            <Pagination
+              {...currentPagination}
+              total={total}
+              onChange={(page, pageSize) => {
+                const newPagination = { ...currentPagination, current: page, pageSize };
+                if (onPaginationChange) onPaginationChange(newPagination);
+              }}
+              style={{ margin: 0 }}
+              showSizeChanger={currentPagination.showSizeChanger}
+            />
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const tableElement = (
+    <div ref={tableContainerRef} className="unified-table-wrapper">
       <Table
         ref={(node) => {
           tableRef.current = node;
-          if (typeof ref === 'function') {
-            ref(node);
-          } else if (ref) {
-            ref.current = node;
-          }
+          if (typeof ref === 'function') ref(node);
+          else if (ref) ref.current = node;
         }}
-        components={components} // Use custom components
+        components={components}
         dataSource={dataSource}
-        columns={mergedColumns} // Use mergedColumns
+        columns={mergedColumns}
         rowKey={rowKey}
-        title={() => title && <strong className="unified-table-title">{title}</strong>}
+        // عرض الصف الخامس دائمًا عبر خاصية title. الدالة renderRow5() تتعامل مع منطق الإخفاء إذا كان فارغًا.
+        title={() => renderRow5()}
         summary={summary}
-        pagination={false}
-        scroll={{ ...defaultScroll, y: 800 }}
+        rowSelection={onRowSelection ? {
+          selectedRowKeys,
+          onChange: (selectedKeys, selectedRows) => {
+            setSelectedRowKeys(selectedKeys);
+            onRowSelection(selectedKeys, selectedRows);
+          },
+          selections: true,
+        } : undefined}
+        pagination={isVirtualized ? false : {
+          ...currentPagination,
+          position: ['bottomRight'], // تحكم صارم: الأسفل فقط عبر منطق AntD الداخلي
+          onChange: (page, pageSize) => {
+            const newPagination = { ...currentPagination, current: page, pageSize };
+            if (onPaginationChange) onPaginationChange(newPagination);
+          },
+        }}
+        scroll={defaultScroll}
+        virtual={isVirtualized}
         size={size}
         className="unified-table"
         {...restProps}
       />
-    );
-    
-    if (showHorizontalScrollbars) {
-      return (
-        <DndProvider backend={HTML5Backend}> {/* Wrap with DndProvider */}
-          <SynchronizedHorizontalScrollbar position="top" />
-          {tableElement}
-          <SynchronizedHorizontalScrollbar position="bottom" />
-        </DndProvider>
-      );
-    }
-    
-    return (
-        <DndProvider backend={HTML5Backend}> {/* Wrap with DndProvider */}
-            {tableElement}
-        </DndProvider>
-    );
-  }
-
-  // Default rendering for smaller datasets
-  const tableElement = (
-    <Table
-      ref={(node) => {
-        tableRef.current = node;
-        if (typeof ref === 'function') {
-          ref(node);
-        } else if (ref) {
-          ref.current = node;
-        }
-      }}
-      components={components} // Use custom components
-      dataSource={dataSource}
-      columns={mergedColumns} // Use mergedColumns
-      rowKey={rowKey}
-      title={() => title && <strong className="unified-table-title">{title}</strong>}
-      summary={summary}
-      pagination={defaultPagination}
-      scroll={defaultScroll}
-      size={size}
-      className="unified-table"
-      {...restProps}
-    />
+    </div>
   );
-  
-  if (showHorizontalScrollbars) {
-    return (
-      <DndProvider backend={HTML5Backend}> {/* Wrap with DndProvider */}
-        <SynchronizedHorizontalScrollbar position="top" />
-        {tableElement}
-        <SynchronizedHorizontalScrollbar position="bottom" />
-      </DndProvider>
-    );
-  }
-  
+
   return (
-    <DndProvider backend={HTML5Backend}> {/* Wrap with DndProvider */}
+    <div className="unified-table-container">
+      {/* الصف 4: شريط التمرير العلوي */}
+      {showHorizontalScrollbars && (
+        <SynchronizedHorizontalScrollbar ref={topScrollRef} position="top" />
+      )}
+
+      {/* الصفوف 5، 6، 7 داخل عنصر الجدول */}
       {tableElement}
-    </DndProvider>
+
+      {/* الصف 3 السفلي: تكرار الترحيل يتم التعامل معه عبر موضع 'bottomRight' للجدول */}
+      {showHorizontalScrollbars && (
+        <SynchronizedHorizontalScrollbar ref={bottomScrollRef} position="bottom" />
+      )}
+    </div>
   );
 });
 

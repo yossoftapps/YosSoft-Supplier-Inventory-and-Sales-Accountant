@@ -3,15 +3,15 @@
 // Inventory Turnover
 // ═══════════════════════════════════════════════════════════════════════════
 
-import { 
-    roundToInteger, 
+import {
+    roundToInteger,
     roundToDecimalPlaces,
-    add, 
-    subtract, 
-    multiply, 
-    divide, 
-    compare, 
-    Decimal 
+    add,
+    subtract,
+    multiply,
+    divide,
+    compare,
+    Decimal
 } from '../utils/financialCalculations';
 
 /**
@@ -23,102 +23,117 @@ import {
  */
 export const calculateInventoryTurnover = (salesData, inventoryData, purchasesData) => {
     const startTime = performance.now();
-    
+
     if (!salesData || salesData.length === 0 || !inventoryData || inventoryData.length === 0) {
         return [];
     }
-    
-    // Create maps to store data by material code
+
+    // 1. Build a Comprehensive Name/Supplier Map from all sources
+    const masterInfoMap = new Map();
+
+    const updateMasterMap = (materialCode, data) => {
+        if (!materialCode) return;
+        if (!masterInfoMap.has(materialCode)) {
+            masterInfoMap.set(materialCode, {
+                itemName: data['اسم المادة'] || '',
+                supplier: data['المورد'] || '',
+                unit: data['الوحدة'] || ''
+            });
+        } else {
+            const entry = masterInfoMap.get(materialCode);
+            if (!entry.itemName && data['اسم المادة']) entry.itemName = data['اسم المادة'];
+            if (!entry.supplier && data['المورد']) entry.supplier = data['المورد'];
+            if (!entry.unit && data['الوحدة']) entry.unit = data['الوحدة'];
+        }
+    };
+
+    // Process all sources to build the map
+    salesData.forEach(sale => updateMasterMap(sale['رمز المادة'], sale));
+    if (purchasesData) purchasesData.forEach(purchase => updateMasterMap(purchase['رمز المادة'], purchase));
+    inventoryData.forEach(inventory => updateMasterMap(inventory['رمز المادة'], inventory));
+
+    // 2. Process data for turnover
     const salesMap = new Map();
     const purchasesMap = new Map();
     const inventoryMap = new Map();
-    
+
     // Process sales data
     salesData.forEach(sale => {
         const materialCode = sale['رمز المادة'];
         if (!materialCode) return;
-        
+
         const quantity = parseFloat(sale['الكمية']) || 0;
         const unitPrice = parseFloat(sale['الافرادي']) || 0;
-        
+
         if (!salesMap.has(materialCode)) {
             salesMap.set(materialCode, {
                 totalQuantity: new Decimal(0),
-                totalValue: new Decimal(0),
-                count: 0
+                totalValue: new Decimal(0)
             });
         }
-        
+
         const entry = salesMap.get(materialCode);
         entry.totalQuantity = add(entry.totalQuantity, new Decimal(quantity));
         entry.totalValue = add(entry.totalValue, new Decimal(quantity * unitPrice));
-        entry.count += 1;
     });
-    
-    // Process purchases data if available
+
+    // Process purchases data
     if (purchasesData && purchasesData.length > 0) {
         purchasesData.forEach(purchase => {
             const materialCode = purchase['رمز المادة'];
             if (!materialCode) return;
-            
             const quantity = parseFloat(purchase['الكمية']) || 0;
             const unitPrice = parseFloat(purchase['الافرادي']) || 0;
-            
+
             if (!purchasesMap.has(materialCode)) {
                 purchasesMap.set(materialCode, {
                     totalQuantity: new Decimal(0),
-                    totalValue: new Decimal(0),
-                    count: 0
+                    totalValue: new Decimal(0)
                 });
             }
-            
             const entry = purchasesMap.get(materialCode);
             entry.totalQuantity = add(entry.totalQuantity, new Decimal(quantity));
             entry.totalValue = add(entry.totalValue, new Decimal(quantity * unitPrice));
-            entry.count += 1;
         });
     }
-    
+
     // Process inventory data
     inventoryData.forEach(inventory => {
         const materialCode = inventory['رمز المادة'];
         if (!materialCode) return;
-        
         const quantity = parseFloat(inventory['الكمية']) || 0;
         const unitPrice = parseFloat(inventory['الافرادي']) || 0;
-        
+
         if (!inventoryMap.has(materialCode)) {
             inventoryMap.set(materialCode, {
                 currentQuantity: new Decimal(0),
-                currentValue: new Decimal(0),
-                supplier: inventory['المورد'] || ''
+                currentValue: new Decimal(0)
             });
         }
-        
         const entry = inventoryMap.get(materialCode);
         entry.currentQuantity = add(entry.currentQuantity, new Decimal(quantity));
         entry.currentValue = add(entry.currentValue, new Decimal(quantity * unitPrice));
-        if (!entry.supplier && inventory['المورد']) {
-            entry.supplier = inventory['المورد'];
-        }
     });
-    
-    // Calculate inventory turnover for each material
+
+    // 3. Final calculations using all material codes from all sources
     const turnoverData = [];
-    
-    inventoryMap.forEach((inventoryEntry, materialCode) => {
+    const allMaterialCodes = new Set([
+        ...salesMap.keys(),
+        ...purchasesMap.keys(),
+        ...inventoryMap.keys()
+    ]);
+
+    allMaterialCodes.forEach((materialCode) => {
         const salesEntry = salesMap.get(materialCode);
-        const purchasesEntry = purchasesMap.get(materialCode);
-        
-        // Calculate COGS (Cost of Goods Sold) - using sales data as proxy
-        // In a more sophisticated system, we'd use actual cost data
+        const inventoryEntry = inventoryMap.get(materialCode);
+        const masterInfo = masterInfoMap.get(materialCode) || {};
+
+        // COGS from sales
         const cogs = salesEntry ? salesEntry.totalValue : new Decimal(0);
-        
-        // Calculate average inventory value
-        // For simplicity, we're using current inventory value as average
-        // In a more sophisticated system, we'd use (beginning inventory + ending inventory) / 2
-        const averageInventoryValue = inventoryEntry.currentValue;
-        
+
+        // Average inventory (using current if average not available)
+        const averageInventoryValue = inventoryEntry ? inventoryEntry.currentValue : new Decimal(0);
+
         // Calculate inventory turnover ratio
         let turnoverRatio = new Decimal(0);
         if (compare(averageInventoryValue, new Decimal(0)) > 0) {
@@ -128,7 +143,7 @@ export const calculateInventoryTurnover = (salesData, inventoryData, purchasesDa
                 turnoverRatio = new Decimal(0);
             }
         }
-        
+
         // Calculate days in inventory (storage period)
         let daysInInventory = new Decimal(0);
         if (compare(turnoverRatio, new Decimal(0)) > 0) {
@@ -139,7 +154,7 @@ export const calculateInventoryTurnover = (salesData, inventoryData, purchasesDa
                 daysInInventory = new Decimal(0);
             }
         }
-        
+
         // Classify turnover speed
         let turnoverClassification = 'راكد';
         const turnoverValue = turnoverRatio.toNumber();
@@ -150,19 +165,19 @@ export const calculateInventoryTurnover = (salesData, inventoryData, purchasesDa
         } else if (turnoverValue > 2) {
             turnoverClassification = 'بطيء';
         }
-        
+
         // Risk indicator based on turnover
         let riskIndicator = new Decimal(100); // High risk for slow turnover
         if (turnoverValue > 0) {
             // Scale risk from 0 (fast turnover) to 100 (slow turnover)
             riskIndicator = new Decimal(Math.min(100, 100 / turnoverValue));
         }
-        
+
         turnoverData.push({
             'رمز المادة': materialCode,
-            'اسم المادة': inventoryEntry.supplier.split(' - ')[1] || '', // Extract material name if available
-            'الوحدة': '', // Would need to extract from data
-            'المورد': inventoryEntry.supplier,
+            'اسم المادة': masterInfo.itemName || '',
+            'الوحدة': masterInfo.unit || '',
+            'المورد': masterInfo.supplier || '',
             'متوسط المخزون': averageInventoryValue,
             'تكلفة المبيعات السنوية': cogs,
             'معدل دوران المخزون': turnoverRatio,
@@ -172,11 +187,11 @@ export const calculateInventoryTurnover = (salesData, inventoryData, purchasesDa
             'مؤشر الخطورة': riskIndicator
         });
     });
-    
+
     // Sort by inventory turnover ratio descending to show fastest turnover items first
-    turnoverData.sort((a, b) => 
+    turnoverData.sort((a, b) =>
         compare(b['معدل دوران المخزون'], a['معدل دوران المخزون']));
-    
+
     // Convert Decimal values to numbers and add sequential numbering
     turnoverData.forEach((item, index) => {
         item['م'] = index + 1;
@@ -187,11 +202,11 @@ export const calculateInventoryTurnover = (salesData, inventoryData, purchasesDa
         item['حركة آخر 90 يوم'] = item['حركة آخر 90 يوم'].toNumber();
         item['مؤشر الخطورة'] = roundToInteger(item['مؤشر الخطورة']).toNumber();
     });
-    
+
     const totalTime = performance.now() - startTime;
     console.log(`✅ [InventoryTurnover] مكتمل:`);
     console.log(`   ⏱️  ${totalTime.toFixed(0)}ms`);
     console.log(`   📊 ${turnoverData.length} صنف`);
-    
+
     return turnoverData;
 };

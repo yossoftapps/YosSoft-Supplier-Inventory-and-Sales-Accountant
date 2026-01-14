@@ -1,0 +1,74 @@
+/* Dark Mode Overrides and Variables */
+.dark-mode {
+    --primary-600: #177ddc;
+    --primary-700: #165996;
+    --neutral-50: #141414;
+    --neutral-100: #1d1d1d;
+    --neutral-700: #8c8c8c;
+    --neutral-900: #cecece;
+    --background-page: #101010;
+    --background-glass: rgba(31, 31, 31, 0.7);
+    --background-glass-hover: rgba(31, 31, 31, 0.85);
+    --surface-card: #1f1f1f;
+    --gradient-card: linear-gradient(135deg, #1f1f1f 0%, #141414 100%);
+    --text-primary: #cecece;
+    --text-secondary: #8c8c8c;
+    --border-color: #303030;
+    --glass-border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Custom styles for components in dark mode */
+.dark-mode .unified-table {
+    background: #1f1f1f;
+}
+
+.dark-mode .unified-table .ant-table-thead>tr>th {
+    background: #1d1d1d;
+    color: #cecece;
+}
+
+.dark-mode .unified-table .ant-table-tbody>tr:hover>td {
+    background: #262626 !important;
+}
+
+.dark-mode .dashboard-widget-card {
+    background: #1f1f1f;
+    color: #cecece;
+}
+
+.dark-mode .unified-filter-bar {
+    background: #1f1f1f !important;
+    border: 1px solid #303030 !important;
+}
+
+.dark-mode .unified-action-bar {
+    background: rgba(31, 31, 31, 0.7);
+}
+
+.dark-mode .ant-layout-sider {
+    background: #1f1f1f !important;
+    border-left-color: #303030;
+}
+
+.dark-mode .ant-menu {
+    background: #1f1f1f !important;
+}
+
+/* Adjust scrollbars for dark mode */
+.dark-mode ::-webkit-scrollbar-track {
+    background: #141414;
+}
+
+.dark-mode ::-webkit-scrollbar-thumb {
+    background: #434343;
+}
+
+.dark-mode ::-webkit-scrollbar-thumb:hover {
+    background: #595959;
+}
+
+/* Dark mode chart tooltips */
+.dark-mode .recharts-default-tooltip {
+    background-color: rgba(31, 31, 31, 0.95) !important;
+    color: #cecece !important;
+}

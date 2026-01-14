@@ -2,138 +2,16 @@ import React, { useState, useCallback, memo, useMemo } from 'react';
 import { formatQuantity, formatMoney } from '../utils/financialCalculations.js';
 import { useTranslation } from 'react-i18next';
 import { filterEndingInventoryData } from '../utils/dataFilter.js';
+import safeString from '../utils/safeString.js';
 import { Table, Tag } from 'antd';
 import UnifiedPageLayout from '../components/UnifiedPageLayout';
 import UnifiedTable from '../components/UnifiedTable';
 import UnifiedAlert from '../components/UnifiedAlert';
 import NavigationTabs from '../components/NavigationTabs';
 import CollapsibleSection from '../components/CollapsibleSection';
+import { ENDING_INVENTORY_DEFAULT_COLUMNS } from '../constants/endingInventoryColumns.js';
 
-// Memoized column definitions to prevent unnecessary re-renders
-const getColumnDefinitions = () => [
-    { title: 'م', dataIndex: 'م', key: 'م', width: 50, align: 'center' },
-    { title: 'رمز المادة', dataIndex: 'رمز المادة', key: 'رمز المادة', width: 100, align: 'center' },
-    { title: 'اسم المادة', dataIndex: 'اسم المادة', key: 'اسم المادة', width: 180, align: 'left' },
-    { title: 'الوحدة', dataIndex: 'الوحدة', key: 'الوحدة', width: 80, align: 'center' },
-    {
-        title: 'الكمية', dataIndex: 'الكمية', key: 'الكمية', width: 100, align: 'center',
-        render: (text) => formatQuantity(text)
-    },
-    { title: 'تاريخ الصلاحية', dataIndex: 'تاريخ الصلاحية', key: 'تاريخ الصلاحية', width: 120, align: 'center' },
-    {
-        title: 'الافرادي', dataIndex: 'الافرادي', key: 'الافرادي', width: 100, align: 'center',
-        render: (text) => formatMoney(text)
-    },
-    {
-        title: 'الاجمالي', dataIndex: 'الاجمالي', key: 'الاجمالي', width: 100, align: 'center',
-        render: (text) => formatMoney(text)
-    },
-    { title: 'تاريخ الشراء', dataIndex: 'تاريخ الشراء', key: 'تاريخ الشراء', width: 120, align: 'center' },
-    { title: 'المورد', dataIndex: 'المورد', key: 'المورد', width: 150, align: 'right' },
-    { title: 'عمر الصنف', dataIndex: 'عمر الصنف', key: 'عمر الصنف', width: 80, align: 'center', render: (text) => text ? `${text} يوم` : '-' },
-    {
-        title: 'كمية المبيعات', dataIndex: 'كمية المبيعات', key: 'كمية المبيعات', width: 100, align: 'center',
-        render: (text) => <strong style={{ color: '#096dd9' }}>{formatQuantity(parseFloat(text) || 0)}</strong>
-    },
-    {
-        title: 'نسبة الفائض', dataIndex: 'نسبة الفائض', key: 'نسبة الفائض', width: 80, align: 'center',
-        render: (text) => {
-            const val = parseInt(text) || 0;
-            return <span style={{ color: val < 0 ? 'orange' : (val > 0 ? '#1890ff' : 'green') }}>{text}</span>
-        }
-    },
-    {
-        title: 'فائض المخزون', dataIndex: 'فائض المخزون', key: 'فائض المخزون', width: 100, align: 'center',
-        render: (text) => {
-            const val = parseFloat(text) || 0;
-            return <strong style={{ color: val < 0 ? '#cf1322' : (val > 0 ? '#1890ff' : 'green') }}>{formatQuantity(val)}</strong>
-        }
-    },
-    {
-        title: 'قيمة فائض المخزون', dataIndex: 'قيمة فائض المخزون', key: 'قيمة فائض المخزون', width: 100, align: 'center',
-        render: (text) => <span style={{ color: '#531dab' }}>{formatMoney(text)}</span>
-    },
-    {
-        title: 'معد للارجاع', dataIndex: 'معد للارجاع', key: 'معد للارجاع', width: 100, align: 'center',
-        render: (text) => {
-            const value = parseFloat(text) || 0;
-            return <strong>{formatQuantity(value)}</strong>
-        }
-    },
-    {
-        title: 'قيمة معد للارجاع', dataIndex: 'قيمة معد للارجاع', key: 'قيمة معد للارجاع', width: 100, align: 'center',
-        render: (text) => <span style={{ color: '#531dab' }}>{formatMoney(text)}</span>
-    },
-    {
-        title: 'مخزون مثالي', dataIndex: 'مخزون مثالي', key: 'مخزون مثالي', width: 100, align: 'center',
-        render: (text) => {
-            const value = parseFloat(text) || 0;
-            return <strong style={{ color: '#1890ff' }}>{formatQuantity(value)}</strong>
-        }
-    },
-    {
-        title: 'قيمة مخزون مثالي', dataIndex: 'قيمة مخزون مثالي', key: 'قيمة مخزون مثالي', width: 100, align: 'center',
-        render: (text) => <span style={{ color: '#531dab' }}>{formatMoney(text)}</span>
-    },
-    {
-        title: 'صنف جديد', dataIndex: 'صنف جديد', key: 'صنف جديد', width: 100, align: 'center',
-        render: (text) => {
-            const value = parseFloat(text) || 0;
-            return <strong style={{ color: value > 0 ? 'blue' : 'inherit' }}>{formatQuantity(value)}</strong>
-        }
-    },
-    {
-        title: 'قيمة صنف جديد', dataIndex: 'قيمة صنف جديد', key: 'قيمة صنف جديد', width: 100, align: 'center',
-        render: (text) => <span style={{ color: '#531dab' }}>{formatMoney(text)}</span>
-    },
-    {
-        title: 'الاحتياج', dataIndex: 'الاحتياج', key: 'الاحتياج', width: 100, align: 'center',
-        render: (text) => {
-            const value = parseFloat(text) || 0;
-            return <strong style={{ color: value > 0 ? '#cf1322' : 'inherit' }}>{formatQuantity(value)}</strong>
-        }
-    },
-    {
-        title: 'قيمة الاحتياج', dataIndex: 'قيمة الاحتياج', key: 'قيمة الاحتياج', width: 100, align: 'center',
-        render: (text) => <span style={{ color: '#531dab' }}>{formatMoney(text)}</span>
-    },
-    {
-        title: 'بيان الصلاحية', dataIndex: 'بيان الصلاحية', key: 'بيان الصلاحية', width: 120, align: 'right',
-        render: (text) => {
-            let color = 'default';
-            if (text === 'منتهي') color = 'red';
-            else if (text === 'قريب جدا') color = 'volcano';
-            else if (text === 'قريب') color = 'orange';
-            else if (text === 'بعيد') color = 'green';
-            return <span style={{ color: color, fontWeight: 'bold' }}>{text}</span>;
-        }
-    },
-    { title: 'بيان الحركة', dataIndex: 'بيان الحركة', key: 'بيان الحركة', width: 120, align: 'right' },
-    {
-        title: 'بيان الحالة', dataIndex: 'الحالة', key: 'الحالة', width: 120, align: 'right',
-        render: (text) => (
-            <span style={{
-                fontWeight: text === 'معد للارجاع' ? 'bold' : 'normal',
-                color: text === 'معد للارجاع' ? 'red' : ((text === 'صنف جديد') ? 'blue' : 'inherit')
-            }}>
-                {text}
-            </span>
-        )
-    },
-    {
-        title: 'البيان', dataIndex: 'البيان', key: 'البيان', width: 120, align: 'right',
-        render: (text) => (
-            <span style={{
-                color: text && text.includes('منتهي') ? 'red' : 'inherit'
-            }}>
-                {text}
-            </span>
-        )
-    },
-    { title: 'القائمة', dataIndex: 'القائمة', key: 'القائمة', width: 50, align: 'center' },
-    { title: 'رقم السجل', dataIndex: 'رقم السجل', key: 'رقم السجل', width: 50, align: 'center' },
-    { title: 'ملاحظات', dataIndex: 'ملاحظات', key: 'ملاحظات', width: 150, align: 'right' },
-];
+
 
 const EndingInventoryPage = memo(({ data, allReportsData, availableReports }) => {
     const { t } = useTranslation();
@@ -152,21 +30,21 @@ const EndingInventoryPage = memo(({ data, allReportsData, availableReports }) =>
         );
     }
 
-    // Apply Filters
+    // تطبيق الفلاتر على بيانات التقرير
     const filteredData = useMemo(() => {
         return filterEndingInventoryData(data, filters);
     }, [data, filters]);
 
-    // Sub-tab filtering
+    // فلترة القائمة بحسب التبويب الفرعي (بيان الحالة)
     const subFilteredList = useMemo(() => {
         let list = filteredData.endingInventoryList;
         if (subTab !== 'all') {
-            list = list.filter(item => item['الحالة'] === subTab);
+            list = list.filter(item => item['بيان الحالة'] === subTab);
         }
         return list;
     }, [filteredData, subTab]);
 
-    // Apply Sorting
+    // تطبيق الفرز (إن وُجد ترتيب فرز محدد)
     const sortedData = useMemo(() => {
         if (!sortOrder.field || !sortOrder.order) return subFilteredList;
 
@@ -181,7 +59,7 @@ const EndingInventoryPage = memo(({ data, allReportsData, availableReports }) =>
             if (!isNaN(aNum) && !isNaN(bNum)) {
                 return sortOrder.order === 'asc' ? aNum - bNum : bNum - aNum;
             }
-            const comparison = String(aValue).localeCompare(String(bValue));
+            const comparison = safeString(aValue).localeCompare(safeString(bValue));
             return sortOrder.order === 'asc' ? comparison : -comparison;
         });
     }, [subFilteredList, sortOrder]);
@@ -252,251 +130,44 @@ const EndingInventoryPage = memo(({ data, allReportsData, availableReports }) =>
         };
     }, [subFilteredList]);
 
-    const allColumns = [
-        { title: 'م', dataIndex: 'م', key: 'م', width: 50, align: 'center' },
-        { title: 'رمز المادة', dataIndex: 'رمز المادة', key: 'رمز المادة', width: 100, align: 'center' },
-        { title: 'اسم المادة', dataIndex: 'اسم المادة', key: 'اسم المادة', width: 180, align: 'left' },
-        { title: 'الوحدة', dataIndex: 'الوحدة', key: 'الوحدة', width: 80, align: 'center' },
-        { title: 'الكمية', dataIndex: 'الكمية', key: 'الكمية', width: 100, align: 'center', render: val => formatQuantity(val) },
-        { title: 'الافرادي', dataIndex: 'الافرادي', key: 'الافرادي', width: 100, align: 'center', render: val => formatMoney(val) },
-        { title: 'الاجمالي', dataIndex: 'الاجمالي', key: 'الاجمالي', width: 110, align: 'center', render: val => <strong>{formatMoney(val)}</strong> },
-        { title: 'تاريخ الصلاحية', dataIndex: 'تاريخ الصلاحية', key: 'تاريخ الصلاحية', width: 110, align: 'center' },
-        { title: 'المورد', dataIndex: 'المورد', key: 'المورد', width: 150, align: 'right' },
-        { title: 'تاريخ الشراء', dataIndex: 'تاريخ الشراء', key: 'تاريخ الشراء', width: 110, align: 'center' },
-        { title: 'عمر الصنف', dataIndex: 'عمر الصنف', key: 'عمر الصنف', width: 90, align: 'center', render: val => val ? `${val} يوم` : '-' },
-        {
-            title: 'كمية المبيعات',
-            dataIndex: 'salesQty',
-            key: 'salesQty',
-            width: 100,
-            align: 'center',
-            render: (_, record) => {
-                // Calculate sales quantity based on excess percentage and quantity
-                const qty = parseFloat(record['الكمية']) || 0;
-                const excessRatio = parseFloat(record['نسبة الفائض']) || 0;
-                const salesQty = qty * (excessRatio / 100);
-                return formatQuantity(salesQty);
-            }
-        },
-        {
-            title: 'مخزون مثالي',
-            dataIndex: 'idealStock',
-            key: 'idealStock',
-            width: 100,
-            align: 'center',
-            render: (_, record) => {
-                // Same as quantity sold
-                const qty = parseFloat(record['الكمية']) || 0;
-                const excessRatio = parseFloat(record['نسبة الفائض']) || 0;
-                const idealStock = qty * (excessRatio / 100);
-                return formatQuantity(idealStock);
-            }
-        },
-        {
-            title: 'فائض المخزون',
-            dataIndex: 'excessInventory',
-            key: 'excessInventory',
-            width: 110,
-            align: 'center',
-            render: (_, record) => {
-                // Calculate excess inventory as quantity * excess ratio
-                const qty = parseFloat(record['الكمية']) || 0;
-                const excessRatio = parseFloat(record['نسبة الفائض']) || 0;
-                const excessInventory = qty * (excessRatio / 100);
-                return formatQuantity(excessInventory);
-            }
-        },
-        {
-            title: 'قيمة فائض المخزون',
-            dataIndex: 'valueExcessInventory',
-            key: 'valueExcessInventory',
-            width: 120,
-            align: 'center',
-            render: (_, record) => {
-                // Calculate as excess inventory quantity * unit price
-                const qty = parseFloat(record['الكمية']) || 0;
-                const excessRatio = parseFloat(record['نسبة الفائض']) || 0;
-                const unitPrice = parseFloat(record['الافرادي']) || 0;
-                const excessInventory = qty * (excessRatio / 100);
-                return formatMoney(excessInventory * unitPrice);
-            }
-        },
-        { title: 'معد للارجاع', dataIndex: 'معد للارجاع', key: 'معد للارجاع', width: 110, align: 'center', render: val => formatQuantity(val) },
-        {
-            title: 'قيمة معد للارجاع',
-            dataIndex: 'valueReturns',
-            key: 'valueReturns',
-            width: 120,
-            align: 'center',
-            render: (_, record) => {
-                const returns = parseFloat(record['معد للارجاع']) || 0;
-                const unitPrice = parseFloat(record['الافرادي']) || 0;
-                return formatMoney(returns * unitPrice);
-            }
-        },
-        {
-            title: 'صنف جديد',
-            dataIndex: 'isNewItem',
-            key: 'isNewItem',
-            width: 100,
-            align: 'center',
-            render: (_, record) => {
-                // Display quantity if item age <= 90 days
-                const itemAge = parseFloat(record['عمر الصنف']) || 0;
-                const qty = parseFloat(record['الكمية']) || 0;
-                if (itemAge <= 90) {
-                    return formatQuantity(qty);
-                }
-                return '-';
-            }
-        },
-        { title: 'الاحتياج', dataIndex: 'الاحتياج', key: 'الاحتياج', width: 100, align: 'center', render: val => <span style={{ color: val > 0 ? '#ff4d4f' : 'inherit' }}>{formatQuantity(val)}</span> },
-        {
-            title: 'قيمة الاحتياج',
-            dataIndex: 'valueNeed',
-            key: 'valueNeed',
-            width: 120,
-            align: 'center',
-            render: (_, record) => {
-                const need = parseFloat(record['الاحتياج']) || 0;
-                const unitPrice = parseFloat(record['الافرادي']) || 0;
-                return formatMoney(need * unitPrice);
-            }
-        },
-        { title: 'نسبة الفائض', dataIndex: 'نسبة الفائض', key: 'نسبة الفائض', width: 90, align: 'center', render: val => <span style={{ color: val > 0 ? '#ff4d4f' : '#52c41a' }}>{val}%</span> },
-        {
-            title: 'بيان الصلاحية',
-            dataIndex: 'بيان الصلاحية',
-            key: 'بيان الصلاحية',
-            width: 120,
-            align: 'right',
-            render: (text) => {
-                let color = 'default';
-                if (text === 'منتهي') color = 'red';
-                else if (text === 'قريب جدا') color = 'volcano';
-                else if (text === 'قريب') color = 'orange';
-                else if (text === 'بعيد') color = 'green';
-                return <span style={{ color: color, fontWeight: 'bold' }}>{text}</span>;
-            }
-        },
-        {
-            title: 'بيان الحركة',
-            dataIndex: 'بيان الحركة',
-            key: 'بيان الحركة',
-            width: 120,
-            align: 'right'
-        },
-        {
-            title: 'بيان الحالة',
-            dataIndex: 'الحالة',
-            key: 'الحالة',
-            width: 120,
-            align: 'right',
-            render: (text) => (
-                <span style={{
-                    fontWeight: text === 'معد للارجاع' ? 'bold' : 'normal',
-                    color: text === 'معد للارجاع' ? 'red' : ((text === 'صنف جديد') ? 'blue' : 'inherit')
-                }}>
-                    {text}
-                </span>
-            )
-        },
-        {
-            title: 'البيان',
-            dataIndex: 'البيان',
-            key: 'البيان',
-            width: 120,
-            align: 'right',
-            render: (text) => (
-                <span style={{
-                    color: text && text.includes('منتهي') ? 'red' : 'inherit'
-                }}>
-                    {text}
-                </span>
-            )
-        },
-        {
-            title: 'قيمة مخزون مثالي',
-            dataIndex: 'قيمة مخزون مثالي',
-            key: 'قيمة مخزون مثالي',
-            width: 120,
-            align: 'center',
-            render: (_, record) => {
-                // Calculate as ideal stock quantity * unit price
-                const itemAge = parseFloat(record['عمر الصنف']) || 0;
-                const qty = parseFloat(record['الكمية']) || 0;
-                const unitPrice = parseFloat(record['الافرادي']) || 0;
-                
-                if (itemAge <= 90) {
-                    // For new items, use quantity as ideal stock
-                    return formatMoney(qty * unitPrice);
-                } else {
-                    // Calculate based on excess ratio
-                    const excessRatio = parseFloat(record['نسبة الفائض']) || 0;
-                    const idealStock = qty * (excessRatio / 100);
-                    return formatMoney(idealStock * unitPrice);
-                }
-            }
-        },
-        {
-            title: 'قيمة فائض المخزون',
-            dataIndex: 'valueExcessInventory',
-            key: 'valueExcessInventory',
-            width: 120,
-            align: 'center',
-            render: (_, record) => {
-                // Calculate as excess inventory quantity * unit price
-                const qty = parseFloat(record['الكمية']) || 0;
-                const excessRatio = parseFloat(record['نسبة الفائض']) || 0;
-                const unitPrice = parseFloat(record['الافرادي']) || 0;
-                const excessInventory = qty * (excessRatio / 100);
-                return formatMoney(excessInventory * unitPrice);
-            }
-        },
-        {
-            title: 'قيمة معد للارجاع',
-            dataIndex: 'valueReturns',
-            key: 'valueReturns',
-            width: 120,
-            align: 'center',
-            render: (_, record) => {
-                const returns = parseFloat(record['معد للارجاع']) || 0;
-                const unitPrice = parseFloat(record['الافرادي']) || 0;
-                return formatMoney(returns * unitPrice);
-            }
-        },
-        {
-            title: 'قيمة صنف جديد',
-            dataIndex: 'valueNewItem',
-            key: 'valueNewItem',
-            width: 120,
-            align: 'center',
-            render: (_, record) => {
-                const itemAge = parseFloat(record['عمر الصنف']) || 0;
-                const qty = parseFloat(record['الكمية']) || 0;
-                const unitPrice = parseFloat(record['الافرادي']) || 0;
-                if (itemAge <= 90) {
-                    return formatMoney(qty * unitPrice);
-                }
-                return formatMoney(0);
-            }
-        },
-        {
-            title: 'قيمة الاحتياج',
-            dataIndex: 'valueNeed',
-            key: 'valueNeed',
-            width: 120,
-            align: 'center',
-            render: (_, record) => {
-                const need = parseFloat(record['الاحتياج']) || 0;
-                const unitPrice = parseFloat(record['الافرادي']) || 0;
-                return formatMoney(need * unitPrice);
-            }
-        },
-        { title: 'القائمة', dataIndex: 'القائمة', key: 'القائمة', width: 50, align: 'center' },
-        { title: 'رقم السجل', dataIndex: 'رقم السجل', key: 'رقم السجل', width: 50, align: 'center' },
-        { title: 'ملاحظات', dataIndex: 'ملاحظات', key: 'ملاحظات', width: 150, align: 'right' }
-    ];
+    // دمج الأعمدة الافتراضية مع أي أعمدة محسوبة إضافية، ثم إزالة أي تكرارات اعتمادًا على dataIndex أو key
+    const allColumns = (() => {
+        const raw = [...ENDING_INVENTORY_DEFAULT_COLUMNS];
+        const seen = new Set();
+        const unique = [];
+        for (const col of raw) {
+            const id = col.dataIndex || col.key;
+            if (seen.has(id)) continue;
+            seen.add(id);
+            unique.push(col);
+        }
+        return unique;
+    })();
+
+    // احسب تعداد الحالات لتهيئة تبويبات التنقل (معد للارجاع، صنف جديد، جيد)
+    const statusCounts = useMemo(() => {
+        const list = (filteredData && filteredData.endingInventoryList) || [];
+        const counts = list.reduce((acc, item) => {
+            const s = item['بيان الحالة'] || 'غير محدد';
+            acc[s] = (acc[s] || 0) + 1;
+            return acc;
+        }, {});
+        return { total: list.length, counts };
+    }, [filteredData]);
+
+    // مصفوفة التبويبات المعروضة في رأس الجدول
+    const tabsArray = useMemo(() => {
+        return [
+            { value: 'all', label: `الكل (${statusCounts.total})` },
+            { value: 'معد للارجاع', label: `معد للارجاع (${statusCounts.counts['معد للارجاع'] || 0})` },
+            { value: 'صنف جديد', label: `صنف جديد (${statusCounts.counts['صنف جديد'] || 0})` },
+            { value: 'جيد', label: `جيد (${statusCounts.counts['جيد'] || 0})` },
+            { value: 'راكد', label: `راكد (${statusCounts.counts['راكد'] || 0})` },
+            { value: 'منتهي', label: `منتهي (${statusCounts.counts['منتهي'] || 0})` },
+            { value: 'قريب جدا', label: `قريب جدا (${statusCounts.counts['قريب جدا'] || 0})` },
+            { value: 'مخزون زائد', label: `مخزون زائد (${statusCounts.counts['مخزون زائد'] || 0})` }
+        ];
+    }, [statusCounts]);
 
     const visibleColumns = useMemo(() =>
         allColumns.filter(col => columnVisibility[col.dataIndex || col.key] !== false),
@@ -510,7 +181,7 @@ const EndingInventoryPage = memo(({ data, allReportsData, availableReports }) =>
     return (
         <UnifiedPageLayout
             title={`المخزون النهائي (${sortedData.length} سجل)`}
-            description="التقرير الشامل للمخزون المتبقي والمطابق مع الجرد، يوضح الفوائض، النواقص، البضاعة الراكدة والمعدة للإرجاع."
+            description="التقرير الشامل للمخزون المتبقي والمطابق مع الجرد، يوضح الفوائض، النواقص، البضاعة الراكدة والمعدة للارجاع."
             interpretation="يعد هذا التقرير 'ذاكرة المخزن'. فهو يربط كافة عمليات الشراء السابقة والبيع والجرد الفعلي ليخبرك بدقة: ماذا تبقى؟ وما هو وضع هذا المتبقي؟ هل هو عبء (فائض/راكد) أم هو فرصة (مخزون مثالي)؟ كما يساعد في كشف الأصناف التي أرجعت ولم يكن لها سجل شراء سابق (المرتجعات اليتيمة)."
             data={sortedData}
             columns={visibleColumns}
@@ -531,7 +202,16 @@ const EndingInventoryPage = memo(({ data, allReportsData, availableReports }) =>
             exportColumns={allColumns}
         >
             <UnifiedTable
-                
+                headerExtra={
+                    <NavigationTabs
+                        value={subTab}
+                        onChange={(e) => {
+                            setSubTab(e.target.value);
+                            setPagination(prev => ({ ...prev, current: 1 }));
+                        }}
+                        tabs={tabsArray}
+                    />
+                }
                 dataSource={sortedData}
                 columns={visibleColumns}
                 rowKey="م"

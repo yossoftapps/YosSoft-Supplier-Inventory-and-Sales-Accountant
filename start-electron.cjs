@@ -16,8 +16,25 @@ async function waitForFirstAvailable(ports, perPortTimeout = 20000) {
     console.log(`محاولة انتظار السيرفر على: ${url}`);
     try {
       await waitOn({ resources: [url], timeout: perPortTimeout });
-      console.log(`تم العثور على السيرفر على: ${url}`);
-      return url;
+      // Quick verification: ensure this server looks like Vite by checking the Vite client endpoint
+      const isVite = await (async () => {
+        try {
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 3000);
+          const res = await fetch(`${url}/@vite/client`, { signal: controller.signal });
+          clearTimeout(timeout);
+          return res && res.ok;
+        } catch (fetchErr) {
+          return false;
+        }
+      })();
+
+      if (isVite) {
+        console.log(`تم العثور على السيرفر (Vite) على: ${url}`);
+        return url;
+      } else {
+        console.warn(`الخدمة على ${url} لا تبدو كخادم Vite، تجربة المنفذ التالي...`);
+      }
     } catch (e) {
       console.warn(`انتهت مهلة الانتظار على ${url}، تجربة المنفذ التالي...`);
     }

@@ -79,7 +79,7 @@ async function main() {
     // Calculate intermediate results
     const netPurchasesResult = calculateNetPurchases(allPurchases, purchaseReturns, rawData.purchases[0]);
     const netSalesResult = calculateNetSales(allSales, salesReturns, rawData.sales[0]);
-    const physicalInventoryResult = processPhysicalInventory(rawData.physicalInventory);
+    const physicalInventoryResult = processPhysicalInventory(rawData.physicalInventory, rawData.purchases);
     const excessInventoryResult = calculateExcessInventory(rawData.physicalInventory, rawData.sales);
     
     // Prepare combined lists for ending inventory

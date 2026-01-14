@@ -1,12 +1,17 @@
 // Print and Export Buttons Component
-import React, { useState, useRef, memo } from 'react';
+import React, { useState, useRef, memo, useEffect } from 'react';
 import { Button, Space, message, Dropdown, Modal, Checkbox, List, Progress } from 'antd';
 import { PrinterOutlined, DownloadOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { serializeData } from '../utils/financialCalculations';
+import safeString from '../utils/safeString.js'; // دالة لمطابقة أسماء الملفات بشكل آمن
 
-const PrintExportButtons = memo(({ data, title, columns, filename, allReportsData }) => {
+const PrintExportButtons = memo(({ data, title, columns, filename, allReportsData, availableReports, columnVisibility: propsColumnVisibility, enableGlobalExport = true }) => {
   const { t } = useTranslation();
+  const [messageApi, contextHolder] = message.useMessage();
+
+  // Use availableReports for UI if provided, otherwise fallback to allReportsData
+  const reportsMetadata = availableReports || (typeof allReportsData === 'object' ? allReportsData : {});
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [selectedReports, setSelectedReports] = useState([]);
   const [isExporting, setIsExporting] = useState(false);
@@ -15,6 +20,12 @@ const PrintExportButtons = memo(({ data, title, columns, filename, allReportsDat
   const [exportError, setExportError] = useState('');
   const [retryCount, setRetryCount] = useState(0);
   const workerRef = useRef(null);
+  const messageApiRef = useRef(null);
+
+  // Update ref when messageApi changes
+  useEffect(() => {
+    messageApiRef.current = messageApi;
+  }, [messageApi]);
 
   // Print functionality
   const handlePrint = () => {
@@ -88,24 +99,42 @@ const PrintExportButtons = memo(({ data, title, columns, filename, allReportsDat
   const handleExportCurrent = () => {
     try {
       if (!data || !Array.isArray(data) || data.length === 0) {
-        message.warning('لا توجد بيانات للتصدير');
+        messageApiRef.current.warning('لا توجد بيانات للتصدير');
         return;
       }
 
+      // Compute effective columns based on columnVisibility (if provided)
+      const effectiveColumns = (typeof columns !== 'undefined' && Array.isArray(columns) ? columns : []).filter(col => {
+        const key = col.dataIndex || col.key;
+        if (!key) return true; // include if no key
+        if (!propsColumnVisibility) return true; // no visibility restrictions provided
+        return propsColumnVisibility[key] !== false;
+      });
+
+      // If no effective columns (e.g., all hidden), fallback to original columns
+      const finalColumns = effectiveColumns.length > 0 ? effectiveColumns : (Array.isArray(columns) ? columns : []);
+
       // Prepare data structure similar to allReportsData for consistency
+      const dateStr = new Date().toISOString().slice(0,10); // YYYY-MM-DD
       const currentReportData = {
         current: {
           data: data,
-          columns: columns,
-          sheetName: title.substring(0, 31)
+          columns: finalColumns,
+          sheetName: title.substring(0, 31),
+          reportDate: dateStr
         }
       };
 
+      // بناء اسم ملف آمن يتضمن التاريخ
+      const baseName = filename || title || 'تقرير';
+      const safeBase = safeString(baseName).replace(/\s+/g, '-');
+      const outFileName = `${safeBase}_${dateStr}.xlsx`;
+
       // Use background export for consistency and better performance
-      exportBackground(currentReportData, `${filename || 'export'}.xlsx`);
+      exportBackground(currentReportData, outFileName);
     } catch (error) {
       console.error('Export error:', error);
-      message.error('حدث خطأ أثناء التصدير');
+      messageApiRef.current.error('حدث خطأ أثناء التصدير');
     }
   };
 
@@ -117,17 +146,17 @@ const PrintExportButtons = memo(({ data, title, columns, filename, allReportsDat
 
   // Check if we should use direct export or background export
   const shouldUseDirectExport = () => {
-    if (!allReportsData) return true;
-    
+    // If we have a function for data, we can't easily estimate without calling it
+    if (typeof allReportsData === 'function') return false;
+    if (!reportsMetadata) return true;
+
     // Estimate total records
     let totalRecords = 0;
-    Object.keys(allReportsData).forEach(reportKey => {
-      const report = allReportsData[reportKey];
-      if (report.data && Array.isArray(report.data)) {
-        totalRecords += report.data.length;
-      }
+    Object.keys(reportsMetadata).forEach(reportKey => {
+      const report = reportsMetadata[reportKey];
+      totalRecords += (report.data ? report.data.length : (report.dataLength || 0));
     });
-    
+
     // Use direct export for smaller datasets (< 10000 records)
     return totalRecords < 10000;
   };
@@ -137,8 +166,16 @@ const PrintExportButtons = memo(({ data, title, columns, filename, allReportsDat
   // Background export for larger datasets
   const exportAllBackground = (isRetry = false) => {
     try {
-      if (!allReportsData || Object.keys(allReportsData).length === 0) {
-        message.warning('لا توجد تقارير للتصدير');
+      // Lazy load data if provided as a function
+      let reportsData = typeof allReportsData === 'function' ? allReportsData() : allReportsData;
+
+      // If reportsData has a getAllResolved method (like our lazy reports object), use it
+      if (reportsData && typeof reportsData.getAllResolved === 'function') {
+        reportsData = reportsData.getAllResolved();
+      }
+
+      if (!reportsData || Object.keys(reportsData).length === 0) {
+        messageApiRef.current.warning('لا توجد تقارير للتصدير');
         return;
       }
 
@@ -155,7 +192,7 @@ const PrintExportButtons = memo(({ data, title, columns, filename, allReportsDat
 
       // Listen for messages from the worker
       workerRef.current.onmessage = (event) => {
-        const { type, message: workerMessage, progress, blob, filename } = event.data;
+        const { type, message: workerMessage, progress, blob, filename, error: workerError } = event.data;
 
         switch (type) {
           case 'PROGRESS':
@@ -169,7 +206,8 @@ const PrintExportButtons = memo(({ data, title, columns, filename, allReportsDat
               const url = URL.createObjectURL(blob);
               const a = document.createElement('a');
               a.href = url;
-              a.download = filename || 'جميع-التقارير.xlsx';
+              const defaultFilename = `جميع-التقارير_${new Date().toISOString().slice(0,10)}.xlsx`;
+              a.download = filename || defaultFilename;
               document.body.appendChild(a);
               a.click();
               document.body.removeChild(a);
@@ -184,7 +222,7 @@ const PrintExportButtons = memo(({ data, title, columns, filename, allReportsDat
               workerRef.current.terminate();
               workerRef.current = null;
 
-              message.success('تم تصدير جميع التقارير إلى ملف Excel واحد بنجاح');
+              messageApiRef.current.success('تم تصدير جميع التقارير إلى ملف Excel واحد بنجاح');
             } catch (error) {
               console.error('Error during download:', error);
               setExportError('حدث خطأ أثناء تنزيل الملف. الرجاء المحاولة مرة أخرى.');
@@ -198,8 +236,9 @@ const PrintExportButtons = memo(({ data, title, columns, filename, allReportsDat
             }
             break;
           case 'ERROR':
-            const errorMsg = `حدث خطأ أثناء التصدير: ${workerMessage}`;
-            console.error('Worker error:', workerMessage);
+            const workerErrorMessage = workerMessage || workerError || event.data.error || 'Unknown error occurred';
+            const errorMsg = `حدث خطأ أثناء التصدير: ${workerErrorMessage}`;
+            console.error('Worker error:', workerErrorMessage);
             setExportError(errorMsg);
             setIsExporting(false);
             setExportProgress(0);
@@ -219,7 +258,7 @@ const PrintExportButtons = memo(({ data, title, columns, filename, allReportsDat
               workerRef.current.terminate();
               workerRef.current = null;
             }
-            message.info('تم إلغاء عملية التصدير');
+            messageApiRef.current.info('تم إلغاء عملية التصدير');
             break;
         }
       };
@@ -231,15 +270,18 @@ const PrintExportButtons = memo(({ data, title, columns, filename, allReportsDat
       setExportError('');
 
       // Serialize data to convert Decimal objects to plain numbers
-      const serializedData = serializeData(allReportsData);
+      const serializedData = serializeData(reportsData);
 
       // Send data to worker (no need to send XLSX library anymore)
+      console.log('📊 Starting export with data size:', JSON.stringify(serializedData).length, 'characters');
+      const dateStrAll = new Date().toISOString().slice(0,10);
+      const outFileAll = `جميع-التقارير_${dateStrAll}.xlsx`;
       workerRef.current.postMessage({
         type: 'EXPORT_REPORTS',
         data: serializedData,
-        filename: 'جميع-التقارير.xlsx'
+        filename: outFileAll
       });
-      
+
       // Set up periodic progress updates for long operations
       const progressInterval = setInterval(() => {
         if (!isExporting) {
@@ -267,14 +309,14 @@ const PrintExportButtons = memo(({ data, title, columns, filename, allReportsDat
         workerRef.current = new Worker(new URL('../workers/exportWorker.js', import.meta.url), { type: 'module' });
       } catch (error) {
         console.error('Failed to create Web Worker:', error);
-        message.error('فشل في إنشاء عملية التصدير في الخلفية. الرجاء التأكد من دعم المتصفح لهذه الميزة.');
+        messageApiRef.current.error('فشل في إنشاء عملية التصدير في الخلفية. الرجاء التأكد من دعم المتصفح لهذه الميزة.');
         setIsExporting(false);
         return;
       }
 
       // Listen for messages from the worker
       workerRef.current.onmessage = (event) => {
-        const { type, message: workerMessage, progress, blob, filename } = event.data;
+        const { type, message: workerMessage, progress, blob, filename, error: workerError } = event.data;
 
         switch (type) {
           case 'PROGRESS':
@@ -303,7 +345,7 @@ const PrintExportButtons = memo(({ data, title, columns, filename, allReportsDat
               workerRef.current.terminate();
               workerRef.current = null;
 
-              message.success('تم تصدير البيانات إلى Excel بنجاح');
+              messageApiRef.current.success('تم تصدير البيانات إلى Excel بنجاح');
             } catch (error) {
               console.error('Error during download:', error);
               setExportError('حدث خطأ أثناء تنزيل الملف. الرجاء المحاولة مرة أخرى.');
@@ -317,8 +359,9 @@ const PrintExportButtons = memo(({ data, title, columns, filename, allReportsDat
             }
             break;
           case 'ERROR':
-            const errorMsg = `حدث خطأ أثناء التصدير: ${workerMessage}`;
-            console.error('Worker error:', workerMessage);
+            const workerErrorMessage = workerMessage || workerError || event.data.error || 'Unknown error occurred';
+            const errorMsg = `حدث خطأ أثناء التصدير: ${workerErrorMessage}`;
+            console.error('Worker error:', workerErrorMessage);
             setExportError(errorMsg);
             setIsExporting(false);
             setExportProgress(0);
@@ -327,7 +370,7 @@ const PrintExportButtons = memo(({ data, title, columns, filename, allReportsDat
               workerRef.current.terminate();
               workerRef.current = null;
             }
-            message.error(errorMsg);
+            messageApiRef.current.error(errorMsg);
             break;
           case 'CANCELLED':
             setIsExporting(false);
@@ -338,7 +381,7 @@ const PrintExportButtons = memo(({ data, title, columns, filename, allReportsDat
               workerRef.current.terminate();
               workerRef.current = null;
             }
-            message.info('تم إلغاء عملية التصدير');
+            messageApiRef.current.info('تم إلغاء عملية التصدير');
             break;
         }
       };
@@ -353,12 +396,13 @@ const PrintExportButtons = memo(({ data, title, columns, filename, allReportsDat
       const serializedData = serializeData(reportsData);
 
       // Send data to worker
+      console.log('📊 Starting export with data size:', JSON.stringify(serializedData).length, 'characters');
       workerRef.current.postMessage({
         type: 'EXPORT_REPORTS',
         data: serializedData,
         filename: fileName
       });
-      
+
       // Set up periodic progress updates for long operations
       const progressInterval = setInterval(() => {
         if (!isExporting) {
@@ -381,7 +425,7 @@ const PrintExportButtons = memo(({ data, title, columns, filename, allReportsDat
   // Show selective export modal
   const showSelectiveExportModal = () => {
     // Initialize selected reports with all available reports
-    const reportKeys = allReportsData ? Object.keys(allReportsData) : [];
+    const reportKeys = reportsMetadata ? Object.keys(reportsMetadata) : [];
     setSelectedReports(reportKeys);
     setIsModalVisible(true);
   };
@@ -390,13 +434,13 @@ const PrintExportButtons = memo(({ data, title, columns, filename, allReportsDat
   const handleSelectiveExport = () => {
     try {
       if (!allReportsData || Object.keys(allReportsData).length === 0) {
-        message.warning('لا توجد تقارير للتصدير');
+        messageApiRef.current.warning('لا توجد تقارير للتصدير');
         setIsModalVisible(false);
         return;
       }
 
       if (selectedReports.length === 0) {
-        message.warning('يرجى اختيار تقرير واحد على الأقل للتصدير');
+        messageApiRef.current.warning('يرجى اختيار تقرير واحد على الأقل للتصدير');
         return;
       }
 
@@ -404,23 +448,22 @@ const PrintExportButtons = memo(({ data, title, columns, filename, allReportsDat
       exportSelectedBackground();
     } catch (error) {
       console.error('Selective export error:', error);
-      message.error('حدث خطأ أثناء تصدير التقارير المحددة');
+      messageApiRef.current.error('حدث خطأ أثناء تصدير التقارير المحددة');
     }
   };
 
   // Check if we should use direct export or background export for selected reports
   const shouldUseDirectSelectiveExport = () => {
-    if (!allReportsData || selectedReports.length === 0) return true;
-    
+    if (typeof allReportsData === 'function') return false;
+    if (!reportsMetadata || selectedReports.length === 0) return true;
+
     // Estimate total records for selected reports
     let totalRecords = 0;
     selectedReports.forEach(reportKey => {
-      const report = allReportsData[reportKey];
-      if (report && report.data && Array.isArray(report.data)) {
-        totalRecords += report.data.length;
-      }
+      const report = reportsMetadata[reportKey];
+      totalRecords += (report.data ? report.data.length : (report.dataLength || 0));
     });
-    
+
     // Use direct export for smaller datasets (< 5000 records)
     return totalRecords < 5000;
   };
@@ -430,12 +473,20 @@ const PrintExportButtons = memo(({ data, title, columns, filename, allReportsDat
   // Background export for selected reports (larger datasets)
   const exportSelectedBackground = () => {
     try {
+      // Lazy load data if provided as a function
+      let reportsData = typeof allReportsData === 'function' ? allReportsData() : allReportsData;
+
+      // If reportsData has a getAllResolved method (like our lazy reports object), use it
+      if (reportsData && typeof reportsData.getAllResolved === 'function') {
+        reportsData = reportsData.getAllResolved();
+      }
+
       // Prepare data for selected reports only
       const selectedReportsData = {};
       selectedReports.forEach(reportKey => {
-        selectedReportsData[reportKey] = allReportsData[reportKey];
+        selectedReportsData[reportKey] = reportsData[reportKey];
       });
-      
+
       // Serialize data to convert Decimal objects to plain numbers
       const serializedData = serializeData(selectedReportsData);
 
@@ -444,7 +495,7 @@ const PrintExportButtons = memo(({ data, title, columns, filename, allReportsDat
         workerRef.current = new Worker(new URL('../workers/exportWorker.js', import.meta.url), { type: 'module' });
       } catch (error) {
         console.error('Failed to create Web Worker:', error);
-        message.error('فشل في إنشاء عملية التصدير في الخلفية. الرجاء التأكد من دعم المتصفح لهذه الميزة.');
+        messageApiRef.current.error('فشل في إنشاء عملية التصدير في الخلفية. الرجاء التأكد من دعم المتصفح لهذه الميزة.');
         setIsExporting(false);
         setIsModalVisible(false);
         return;
@@ -452,7 +503,7 @@ const PrintExportButtons = memo(({ data, title, columns, filename, allReportsDat
 
       // Listen for messages from the worker
       workerRef.current.onmessage = (event) => {
-        const { type, message: workerMessage, progress, blob, filename } = event.data;
+        const { type, message: workerMessage, progress, blob, filename, error: workerError } = event.data;
 
         switch (type) {
           case 'PROGRESS':
@@ -479,10 +530,10 @@ const PrintExportButtons = memo(({ data, title, columns, filename, allReportsDat
               workerRef.current.terminate();
               workerRef.current = null;
 
-              message.success('تم تصدير التقارير المحددة إلى ملف Excel واحد بنجاح');
+              messageApiRef.current.success('تم تصدير التقارير المحددة إلى ملف Excel واحد بنجاح');
             } catch (error) {
               console.error('Error during download:', error);
-              message.error('حدث خطأ أثناء تنزيل الملف. الرجاء المحاولة مرة أخرى.');
+              messageApiRef.current.error('حدث خطأ أثناء تنزيل الملف. الرجاء المحاولة مرة أخرى.');
               setIsExporting(false);
               setExportProgress(0);
               setExportMessage('');
@@ -494,13 +545,14 @@ const PrintExportButtons = memo(({ data, title, columns, filename, allReportsDat
             }
             break;
           case 'ERROR':
+            const workerErrorMessage = workerMessage || workerError || event.data.error || 'Unknown error occurred';
             setIsExporting(false);
             setExportProgress(0);
             setExportMessage('');
             setIsModalVisible(false);
             workerRef.current.terminate();
             workerRef.current = null;
-            message.error(`حدث خطأ أثناء التصدير: ${workerMessage}`);
+            messageApiRef.current.error(`حدث خطأ أثناء التصدير: ${workerErrorMessage}`);
             break;
         }
       };
@@ -512,12 +564,13 @@ const PrintExportButtons = memo(({ data, title, columns, filename, allReportsDat
       setExportError(''); // Clear any previous errors
 
       // Send data to worker (no need to send XLSX library anymore)
+      console.log('📊 Starting export with data size:', JSON.stringify(serializedData).length, 'characters');
       workerRef.current.postMessage({
         type: 'EXPORT_REPORTS',
         data: serializedData,
         filename: 'التقارير-المحددة.xlsx'
       });
-      
+
       // Set up periodic progress updates for long operations
       const progressInterval = setInterval(() => {
         if (!isExporting) {
@@ -534,7 +587,7 @@ const PrintExportButtons = memo(({ data, title, columns, filename, allReportsDat
         workerRef.current.terminate();
         workerRef.current = null;
       }
-      message.error(`حدث خطأ أثناء بدء التصدير في الخلفية: ${error.message}`);
+      messageApiRef.current.error(`حدث خطأ أثناء بدء التصدير في الخلفية: ${error.message}`);
     }
   };
 
@@ -550,7 +603,7 @@ const PrintExportButtons = memo(({ data, title, columns, filename, allReportsDat
   // Handle select all/deselect all
   const handleSelectAll = (checked) => {
     if (checked) {
-      setSelectedReports(allReportsData ? Object.keys(allReportsData) : []);
+      setSelectedReports(reportsMetadata ? Object.keys(reportsMetadata) : []);
     } else {
       setSelectedReports([]);
     }
@@ -575,7 +628,7 @@ const PrintExportButtons = memo(({ data, title, columns, filename, allReportsDat
         }
       }, 100);
     }
-    message.info('تم إلغاء عملية التصدير');
+    messageApiRef.current.info('تم إلغاء عملية التصدير');
   };
 
   // Handle retry export
@@ -590,32 +643,33 @@ const PrintExportButtons = memo(({ data, title, columns, filename, allReportsDat
   const menuItems = [
     { key: 'current', label: t('exportCurrentReport'), onClick: handleExportCurrent },
   ];
-  
-  if (allReportsData && Object.keys(allReportsData).length > 0) {
+
+  if (enableGlobalExport && reportsMetadata && Object.keys(reportsMetadata).length > 0) {
     menuItems.push({ key: 'all', label: t('exportAllReports'), onClick: handleExportAll });
-    menuItems.push({ key: 'selective', label: 'تصدير محدد', onClick: showSelectiveExportModal });
+    menuItems.push({ key: 'selective', label: t('selectiveExport'), onClick: showSelectiveExportModal });
   }
 
   return (
     <>
-      <Space style={{ marginBottom: 16 }}>
+      {contextHolder}
+      <Button
+        type="primary"
+        icon={<PrinterOutlined />}
+        onClick={handlePrint}
+        className="unified-primary-button"
+      >
+        {t('print')}
+      </Button>
+      <Dropdown menu={{ items: menuItems }} trigger={['click']}>
         <Button
-          type="primary"
-          icon={<PrinterOutlined />}
-          onClick={handlePrint}
+          type="default"
+          icon={<DownloadOutlined />}
+          loading={isExporting}
+          className="unified-secondary-button"
         >
-          {t('print')}
+          {t('exportToExcel')}
         </Button>
-        <Dropdown menu={{ items: menuItems }} trigger={['click']}>
-          <Button
-            type="default"
-            icon={<DownloadOutlined />}
-            loading={isExporting}
-          >
-            {t('exportToExcel')}
-          </Button>
-        </Dropdown>
-      </Space>
+      </Dropdown>
 
       {/* Selective Export Modal */}
       <Modal
@@ -628,25 +682,25 @@ const PrintExportButtons = memo(({ data, title, columns, filename, allReportsDat
         width={600}
         confirmLoading={isExporting}
       >
-        {allReportsData && Object.keys(allReportsData).length > 0 ? (
+        {reportsMetadata && Object.keys(reportsMetadata).length > 0 ? (
           <div>
             <Checkbox
               onChange={(e) => handleSelectAll(e.target.checked)}
-              checked={selectedReports.length === Object.keys(allReportsData).length}
-              indeterminate={selectedReports.length > 0 && selectedReports.length < Object.keys(allReportsData).length}
+              checked={selectedReports.length === Object.keys(reportsMetadata).length}
+              indeterminate={selectedReports.length > 0 && selectedReports.length < Object.keys(reportsMetadata).length}
               style={{ marginBottom: 16 }}
             >
               تحديد الكل / إلغاء تحديد الكل
             </Checkbox>
             <List
-              dataSource={Object.entries(allReportsData)}
+              dataSource={Object.entries(reportsMetadata)}
               renderItem={([reportKey, report]) => (
                 <List.Item>
                   <Checkbox
                     onChange={() => handleReportSelection(reportKey)}
                     checked={selectedReports.includes(reportKey)}
                   >
-                    {report.sheetName} ({report.data ? report.data.length : 0} سجل)
+                    {report.sheetName} ({report.data ? report.data.length : (report.dataLength || 0)} سجل)
                   </Checkbox>
                 </List.Item>
               )}

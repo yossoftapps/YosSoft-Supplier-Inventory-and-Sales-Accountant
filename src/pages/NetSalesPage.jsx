@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, memo } from 'react';
 import { Typography, Table } from 'antd';
 import { formatQuantity, formatMoney } from '../utils/financialCalculations.js';
 import { filterSalesData } from '../utils/dataFilter.js';
@@ -8,16 +8,18 @@ import UnifiedTable from '../components/UnifiedTable';
 import UnifiedAlert from '../components/UnifiedAlert';
 import NavigationTabs from '../components/NavigationTabs';
 import CollapsibleSection from '../components/CollapsibleSection';
+import { NET_SALES_DEFAULT_COLUMNS } from '../constants/netSalesColumns.js';
 
 const { Title } = Typography;
 
-function NetSalesPage({ data, allReportsData }) {
+const NetSalesPage = memo(({ data, allReportsData, availableReports }) => {
     const { t } = useTranslation();
     const [selectedTab, setSelectedTab] = useState('netSales');
     const [filters, setFilters] = useState({});
     const [columnVisibility, setColumnVisibility] = useState({});
     const [sortOrder, setSortOrder] = useState({});
-    const [pagination, setPagination] = useState({ pageSize: 50 });
+    const [pagination, setPagination] = useState({ pageSize: 100 });
+    const [density, setDensity] = useState('small');
 
     // Apply filters to data using useMemo for performance
     const filteredData = useMemo(() => {
@@ -50,7 +52,7 @@ function NetSalesPage({ data, allReportsData }) {
                 }
 
                 // Handle string values
-                const comparison = String(aValue).localeCompare(String(bValue));
+                const comparison = safeString(aValue).localeCompare(safeString(bValue));
                 return sortOrder.order === 'asc' ? comparison : -comparison;
             });
         };
@@ -61,6 +63,27 @@ function NetSalesPage({ data, allReportsData }) {
         };
     }, [filteredData, sortOrder]);
 
+    const grandTotals = useMemo(() => {
+        const sum = (list, key) => list.reduce((acc, curr) => acc + parseFloat(curr[key] || 0), 0);
+        const calculateTotalValue = (list) => {
+            return list.reduce((total, record) => {
+                const quantity = parseFloat(record['الكمية'] || 0);
+                const price = parseFloat(record['الافرادي'] || 0);
+                return total + (quantity * price);
+            }, 0);
+        };
+        return {
+            netSales: {
+                qty: sum(sortedData.netSalesList, 'الكمية'),
+                value: calculateTotalValue(sortedData.netSalesList)
+            },
+            orphanReturns: {
+                qty: sum(sortedData.orphanReturnsList, 'الكمية'),
+                value: calculateTotalValue(sortedData.orphanReturnsList)
+            }
+        };
+    }, [sortedData]);
+
     if (!data) {
         return (
             <div className="padding-lg">
@@ -69,31 +92,15 @@ function NetSalesPage({ data, allReportsData }) {
         );
     }
 
-    // Define all columns
-    const allColumns = [
-        { title: 'م', dataIndex: 'م', key: 'م', width: 60, align: 'center' },
-        { title: 'رمز المادة', dataIndex: 'رمز المادة', key: 'رمز المادة', width: 120 },
-        { title: 'اسم المادة', dataIndex: 'اسم المادة', key: 'اسم المادة' },
-        { title: 'الوحدة', dataIndex: 'الوحدة', key: 'الوحدة', width: 80, align: 'center' },
-        {
-            title: 'الكمية', dataIndex: 'الكمية', key: 'الكمية', width: 100, align: 'left',
-            render: (text) => formatQuantity(text)
-        },
-        {
-            title: 'الافرادي', dataIndex: 'الافرادي', key: 'الافرادي', width: 80, align: 'left',
-            render: (text) => formatMoney(text)
-        },
-        { title: 'تاريخ الصلاحية', dataIndex: 'تاريخ الصلاحية', key: 'تاريخ الصلاحية', width: 120 },
-        { title: 'تاريخ العملية', dataIndex: 'تاريخ العملية', key: 'تاريخ العملية', width: 120 },
-        { title: 'نوع العملية', dataIndex: 'نوع العملية', key: 'نوع العملية', width: 100, align: 'center' },
-        { title: 'ملاحظات', dataIndex: 'ملاحظات', key: 'ملاحظات', width: 150, align: 'center' },
-        { title: 'القائمة', dataIndex: 'القائمة', key: 'القائمة', width: 80, align: 'center' },
-    ];
+    // Use exported default columns
+    const allColumns = NET_SALES_DEFAULT_COLUMNS;
 
-    // Filter columns based on visibility settings
-    const visibleColumns = allColumns.filter(col =>
-        columnVisibility[col.dataIndex || col.key] !== false
-    );
+    // Filter columns based on visibility settings - MEMOIZED to prevent unnecessary re-renders
+    const visibleColumns = useMemo(() => {
+        return NET_SALES_DEFAULT_COLUMNS.filter(col =>
+            columnVisibility[col.dataIndex || col.key] !== false
+        );
+    }, [columnVisibility, t]);
 
     // Stable callbacks using useCallback to prevent infinite loops
     const handleColumnVisibilityChange = useCallback((newVisibility) => {
@@ -108,96 +115,188 @@ function NetSalesPage({ data, allReportsData }) {
         setPagination(newPagination);
     }, []);
 
+    const handleDensityChange = useCallback((newDensity) => {
+        setDensity(newDensity);
+    }, []);
+
     return (
         <UnifiedPageLayout
-            title={t('netSales')}
+            title={`${t('netSales')} (${selectedTab === 'netSales' ? sortedData.netSalesList.length : sortedData.orphanReturnsList.length} ${t('records')})`}
             description="عرض المبيعات بعد خصم المرتجعات المطابقة، والمرتجعات التي لم يتم مطابقتها."
+            interpretation="يعرض هذا التقرير العمليات البيعية الصافية (Sales Minus Returns). يتم استبعاد المرتجعات التي تم العثور على أصل بيع لها، وتوضيح المرتجعات اليتيمة التي لم تُطابق مع عملية بيع في السجلات الحالية."
             data={selectedTab === 'netSales' ? sortedData.netSalesList : sortedData.orphanReturnsList}
             columns={visibleColumns}
             filename={selectedTab === 'netSales' ? 'net-sales' : 'orphan-returns'}
             allReportsData={allReportsData}
+            availableReports={availableReports}
             reportKey="netSales"
             onColumnVisibilityChange={handleColumnVisibilityChange}
             onSortOrderChange={handleSortOrderChange}
             onPaginationChange={handlePaginationChange}
             pagination={pagination}
+            onDensityChange={handleDensityChange}
+            density={density}
             filterData={data}
             filterDataType="sales"
             onFilterChange={setFilters}
+            category="basic"
+            exportColumns={NET_SALES_DEFAULT_COLUMNS}
         >
-            <CollapsibleSection title="أدوات التنقل والتبويب">
-                <NavigationTabs
-                    value={selectedTab}
-                    onChange={(e) => setSelectedTab(e.target.value)}
-                    tabs={[
-                        { value: 'netSales', label: `قائمة C: المبيعات الفعلية (${sortedData.netSalesList.length})` },
-                        { value: 'orphanReturns', label: `قائمة D: المرتجعات اليتيمة (${sortedData.orphanReturnsList.length})` }
-                    ]}
-                />
-            </CollapsibleSection>
 
             {selectedTab === 'netSales' && (
-                <CollapsibleSection title={`قائمة C: المبيعات الفعلية (${sortedData.netSalesList.length} ${t('records')})`} defaultCollapsed={false}>
-                    <UnifiedTable
-                        dataSource={sortedData.netSalesList}
-                        columns={visibleColumns}
-                        rowKey="م"
-                        title={`قائمة C: المبيعات الفعلية (${sortedData.netSalesList.length} ${t('records')})`}
-                        scroll={{ x: 1200 }}
-                        pagination={{
-                            position: ['topRight', 'bottomRight'],
-                            pageSize: pagination.pageSize,
-                            showSizeChanger: true,
-                            pageSizeOptions: ['25', '50', '100', '200']
-                        }}
-                        summary={() => (
-                            <Table.Summary.Row>
-                                <Table.Summary.Cell index={0} colSpan={4}>
-                                    <strong className="unified-table-summary">الإجمالي</strong>
-                                </Table.Summary.Cell>
-                                <Table.Summary.Cell index={4}>
-                                    <strong className="unified-table-summary">
-                                        {formatQuantity(sortedData.netSalesList.reduce((sum, record) => sum + parseFloat(record['الكمية'] || 0), 0))}
-                                    </strong>
-                                </Table.Summary.Cell>
-                                <Table.Summary.Cell index={5} colSpan={6}></Table.Summary.Cell>
-                            </Table.Summary.Row>
-                        )}
-                    />
-                </CollapsibleSection>
+                <UnifiedTable
+                    headerExtra={
+                        <NavigationTabs
+                            value={selectedTab}
+                            onChange={(e) => {
+                                setSelectedTab(e.target.value);
+                                setPagination(prev => ({ ...prev, current: 1 }));
+                            }}
+                            tabs={[
+                                { value: 'netSales', label: `قائمة C: المبيعات الفعلية (${sortedData.netSalesList.length})` },
+                                { value: 'orphanReturns', label: `قائمة D: المرتجعات اليتيمة (${sortedData.orphanReturnsList.length})` }
+                            ]}
+                        />
+                    }
+                    dataSource={sortedData.netSalesList}
+                    pagination={{
+                        ...pagination,
+                        total: sortedData.netSalesList.length,
+                        showSizeChanger: true
+                    }}
+                    onPaginationChange={handlePaginationChange}
+                    size={density}
+                    virtualized={false}
+                    columns={visibleColumns}
+                    rowKey="م"
+                    title={`قائمة A: المبيعات الفعلية (${sortedData.netSalesList.length} ${t('records')})`}
+                    scroll={{ x: 2500 }}
+                    summary={(pageData) => {
+                        let totalQty = 0;
+                        let totalValue = 0;
+                        pageData.forEach((record) => {
+                            totalQty += parseFloat(record['الكمية'] || 0);
+                            const quantity = parseFloat(record['الكمية'] || 0);
+                            const price = parseFloat(record['الافرادي'] || 0);
+                            totalValue += quantity * price;
+                        });
+                        return (
+                            <>
+                                <Table.Summary.Row>
+                                    <Table.Summary.Cell index={0} colSpan={4}>
+                                        <strong className="unified-table-summary">إجمالي أرقام هذه الصفحة</strong>
+                                    </Table.Summary.Cell>
+                                    <Table.Summary.Cell index={4}>
+                                        <strong className="unified-table-summary">
+                                            {formatQuantity(totalQty)}
+                                        </strong>
+                                    </Table.Summary.Cell>
+                                    <Table.Summary.Cell index={5}>
+                                        <strong className="unified-table-summary">
+                                            {formatMoney(totalValue)}
+                                        </strong>
+                                    </Table.Summary.Cell>
+                                    <Table.Summary.Cell index={6} colSpan={5}></Table.Summary.Cell>
+                                </Table.Summary.Row>
+                                <Table.Summary.Row>
+                                    <Table.Summary.Cell index={0} colSpan={4}>
+                                        <strong className="unified-table-summary">الإجمالي الكلي للقائمة</strong>
+                                    </Table.Summary.Cell>
+                                    <Table.Summary.Cell index={4}>
+                                        <strong className="unified-table-summary">
+                                            {formatQuantity(grandTotals.netSales.qty)}
+                                        </strong>
+                                    </Table.Summary.Cell>
+                                    <Table.Summary.Cell index={5}>
+                                        <strong className="unified-table-summary">
+                                            {formatMoney(grandTotals.netSales.value)}
+                                        </strong>
+                                    </Table.Summary.Cell>
+                                    <Table.Summary.Cell index={6} colSpan={5}></Table.Summary.Cell>
+                                </Table.Summary.Row>
+                            </>
+                        );
+                    }}
+                />
             )}
             {selectedTab === 'orphanReturns' && (
-                <CollapsibleSection title={`قائمة D: المرتجعات اليتيمة (${sortedData.orphanReturnsList.length} ${t('records')})`} defaultCollapsed={false}>
-                    <UnifiedTable
-                        dataSource={sortedData.orphanReturnsList}
-                        columns={visibleColumns}
-                        rowKey="م"
-                        title={`قائمة D: المرتجعات اليتيمة (${sortedData.orphanReturnsList.length} ${t('records')})`}
-                        scroll={{ x: 1200 }}
-                        pagination={{
-                            position: ['topRight', 'bottomRight'],
-                            pageSize: pagination.pageSize,
-                            showSizeChanger: true,
-                            pageSizeOptions: ['25', '50', '100', '200']
-                        }}
-                        summary={() => (
-                            <Table.Summary.Row>
-                                <Table.Summary.Cell index={0} colSpan={4}>
-                                    <strong className="unified-table-summary">الإجمالي</strong>
-                                </Table.Summary.Cell>
-                                <Table.Summary.Cell index={4}>
-                                    <strong className="unified-table-summary">
-                                        {formatQuantity(sortedData.orphanReturnsList.reduce((sum, record) => sum + parseFloat(record['الكمية'] || 0), 0))}
-                                    </strong>
-                                </Table.Summary.Cell>
-                                <Table.Summary.Cell index={5} colSpan={6}></Table.Summary.Cell>
-                            </Table.Summary.Row>
-                        )}
-                    />
-                </CollapsibleSection>
+                <UnifiedTable
+                    headerExtra={
+                        <NavigationTabs
+                            value={selectedTab}
+                            onChange={(e) => {
+                                setSelectedTab(e.target.value);
+                                setPagination(prev => ({ ...prev, current: 1 }));
+                            }}
+                            tabs={[
+                                { value: 'netSales', label: `قائمة C: المبيعات الفعلية (${sortedData.netSalesList.length})` },
+                                { value: 'orphanReturns', label: `قائمة D: المرتجعات اليتيمة (${sortedData.orphanReturnsList.length})` }
+                            ]}
+                        />
+                    }
+                    dataSource={sortedData.orphanReturnsList}
+                    pagination={{
+                        ...pagination,
+                        total: sortedData.orphanReturnsList.length,
+                        showSizeChanger: true
+                    }}
+                    onPaginationChange={handlePaginationChange}
+                    size={density}
+                    virtualized={false}
+                    columns={visibleColumns}
+                    rowKey="م"
+                    title={`قائمة B: مرتجعات مبيعات يتيمة (${sortedData.orphanReturnsList.length} ${t('records')})`}
+                    scroll={{ x: 2500 }}
+                    summary={(pageData) => {
+                        let totalQty = 0;
+                        let totalValue = 0;
+                        pageData.forEach((record) => {
+                            totalQty += parseFloat(record['الكمية'] || 0);
+                            const quantity = parseFloat(record['الكمية'] || 0);
+                            const price = parseFloat(record['الافرادي'] || 0);
+                            totalValue += quantity * price;
+                        });
+                        return (
+                            <>
+                                <Table.Summary.Row>
+                                    <Table.Summary.Cell index={0} colSpan={4}>
+                                        <strong className="unified-table-summary">إجمالي أرقام هذه الصفحة</strong>
+                                    </Table.Summary.Cell>
+                                    <Table.Summary.Cell index={4}>
+                                        <strong className="unified-table-summary">
+                                            {formatQuantity(totalQty)}
+                                        </strong>
+                                    </Table.Summary.Cell>
+                                    <Table.Summary.Cell index={5}>
+                                        <strong className="unified-table-summary">
+                                            {formatMoney(totalValue)}
+                                        </strong>
+                                    </Table.Summary.Cell>
+                                    <Table.Summary.Cell index={6} colSpan={5}></Table.Summary.Cell>
+                                </Table.Summary.Row>
+                                <Table.Summary.Row>
+                                    <Table.Summary.Cell index={0} colSpan={4}>
+                                        <strong className="unified-table-summary">الإجمالي الكلي للقائمة</strong>
+                                    </Table.Summary.Cell>
+                                    <Table.Summary.Cell index={4}>
+                                        <strong className="unified-table-summary">
+                                            {formatQuantity(grandTotals.orphanReturns.qty)}
+                                        </strong>
+                                    </Table.Summary.Cell>
+                                    <Table.Summary.Cell index={5}>
+                                        <strong className="unified-table-summary">
+                                            {formatMoney(grandTotals.orphanReturns.value)}
+                                        </strong>
+                                    </Table.Summary.Cell>
+                                    <Table.Summary.Cell index={6} colSpan={5}></Table.Summary.Cell>
+                                </Table.Summary.Row>
+                            </>
+                        );
+                    }}
+                />
             )}
         </UnifiedPageLayout>
     );
-}
+});
 
 export default NetSalesPage;

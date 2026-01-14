@@ -1,26 +1,92 @@
-import React, { useMemo } from 'react';
+import React, { useState, useMemo, useCallback, memo } from 'react';
 import { Tag, Table } from 'antd';
 import { formatQuantity } from '../utils/financialCalculations';
 import UnifiedPageLayout from '../components/UnifiedPageLayout';
 import UnifiedTable from '../components/UnifiedTable';
+import safeString from '../utils/safeString.js';
 import UnifiedAlert from '../components/UnifiedAlert';
+import NavigationTabs from '../components/NavigationTabs';
 import { useTranslation } from 'react-i18next';
 
-const StagnationRiskPage = ({ data, allReportsData }) => {
+const StagnationRiskPage = memo(({ data, allReportsData, availableReports }) => {
     const { t } = useTranslation();
+    const [columnVisibility, setColumnVisibility] = useState({});
+    const [sortOrder, setSortOrder] = useState({});
+    const [pagination, setPagination] = useState({ pageSize: 50 });
+    const [density, setDensity] = useState('small');
+    const [filters, setFilters] = useState({});
+    const [selectedTab, setSelectedTab] = useState('all');
 
-    if (!data) {
+    if (!data || data.length === 0) {
         return (
             <div className="padding-lg">
-                <UnifiedAlert 
-                    message="لا توجد بيانات للعرض" 
-                    description="يرجى استيراد البيانات ومعالجتها أولاً" 
-                />
+                <UnifiedAlert message={t('noData')} description={t('importExcelFirst')} />
             </div>
         );
     }
 
-    // Function to determine tag color based on risk level
+    // Apply Filters
+    const filteredData = useMemo(() => {
+        return data.filter(item => {
+            const smartSearch = safeString(filters.smartSearch).toLowerCase();
+            if (smartSearch) {
+                const matchesAnyField = Object.values(item).some(value =>
+                    safeString(value).toLowerCase().includes(smartSearch)
+                );
+                if (!matchesAnyField) return false;
+            }
+            return true;
+        });
+    }, [data, filters]);
+
+    // Grouping for tabs
+    const tabsData = useMemo(() => {
+        const grouped = { all: filteredData };
+        filteredData.forEach(item => {
+            const risk = item['تصنيف الخطورة'] || 'غير محدد';
+            if (!grouped[risk]) grouped[risk] = [];
+            grouped[risk].push(item);
+        });
+        return grouped;
+    }, [filteredData]);
+
+    const activeList = tabsData[selectedTab] || [];
+
+    // Apply Sorting
+    const sortedData = useMemo(() => {
+        if (!sortOrder.field || !sortOrder.order) return activeList;
+
+        return [...activeList].sort((a, b) => {
+            const aValue = a[sortOrder.field];
+            const bValue = b[sortOrder.field];
+            if (aValue == null && bValue == null) return 0;
+            if (aValue == null) return sortOrder.order === 'asc' ? -1 : 1;
+            if (bValue == null) return sortOrder.order === 'asc' ? 1 : -1;
+            const aNum = parseFloat(aValue);
+            const bNum = parseFloat(bValue);
+            if (!isNaN(aNum) && !isNaN(bNum)) {
+                return sortOrder.order === 'asc' ? aNum - bNum : bNum - aNum;
+            }
+            const comparison = String(aValue).localeCompare(String(bValue));
+            return sortOrder.order === 'asc' ? comparison : -comparison;
+        });
+    }, [activeList, sortOrder]);
+
+    const grandTotals = useMemo(() => {
+        return {
+            qty: activeList.reduce((sum, item) => sum + (parseFloat(item['الكمية الحالية']) || 0), 0)
+        };
+    }, [activeList]);
+
+    const tabsArray = useMemo(() => {
+        const tabs = [{ value: 'all', label: `الكل (${tabsData.all?.length || 0})` }];
+        const classifications = Object.keys(tabsData).filter(key => key !== 'all');
+        classifications.forEach(cls => {
+            tabs.push({ value: cls, label: `${cls} (${tabsData[cls]?.length || 0})` });
+        });
+        return tabs;
+    }, [tabsData]);
+
     const getRiskColor = (riskLevel) => {
         switch (riskLevel) {
             case 'عالي': return 'red';
@@ -30,188 +96,123 @@ const StagnationRiskPage = ({ data, allReportsData }) => {
         }
     };
 
-    const columns = [
-        { 
-            title: 'م', 
-            dataIndex: 'م', 
-            width: 60, 
-            align: 'center',
-            fixed: 'left'
-        },
-        { 
-            title: 'رمز المادة', 
-            dataIndex: 'رمز المادة', 
-            width: 120,
-            fixed: 'left'
-        },
-        { 
-            title: 'اسم المادة', 
-            dataIndex: 'اسم المادة', 
-            width: 200
-        },
-        { 
-            title: 'الوحدة', 
-            dataIndex: 'الوحدة', 
-            width: 80,
-            align: 'center'
-        },
-        { 
-            title: 'الكمية الحالية', 
-            dataIndex: 'الكمية الحالية', 
-            width: 120,
-            align: 'right',
+    const allColumns = [
+        { title: 'م', dataIndex: 'م', key: 'م', width: 50, align: 'center' },
+        { title: 'رمز المادة', dataIndex: 'رمز المادة', key: 'رمز المادة', width: 100, align: 'center' },
+        { title: 'اسم المادة', dataIndex: 'اسم المادة', key: 'اسم المادة', width: 180, align: 'left' },
+        { title: 'الوحدة', dataIndex: 'الوحدة', key: 'الوحدة', width: 80, align: 'center' },
+        {
+            title: 'الكمية الحالية', dataIndex: 'الكمية الحالية', key: 'الكمية الحالية', width: 100, align: 'center',
             render: val => formatQuantity(val)
         },
-        { 
-            title: 'عدد مرات البيع', 
-            dataIndex: 'عدد مرات البيع', 
-            width: 120,
-            align: 'center'
-        },
-        { 
-            title: 'متوسط الكمية المباعة', 
-            dataIndex: 'متوسط الكمية المباعة', 
-            width: 150,
-            align: 'right',
+        { title: 'مرات البيع', dataIndex: 'عدد مرات البيع', key: 'عدد مرات البيع', width: 80, align: 'center' },
+        {
+            title: 'متوسط الكمية', dataIndex: 'متوسط الكمية المباعة', key: 'متوسط الكمية المباعة', width: 90, align: 'center',
             render: val => formatQuantity(val)
         },
-        { 
-            title: 'متوسط الفترة بين المبيعات (أيام)', 
-            dataIndex: 'متوسط الفترة بين المبيعات (أيام)', 
-            width: 200,
-            align: 'center'
-        },
-        { 
-            title: 'معدل دوران المخزون', 
-            dataIndex: 'معدل دوران المخزون', 
-            width: 150,
-            align: 'right',
+        { title: 'متوسط الفترة (يوم)', dataIndex: 'متوسط الفترة بين المبيعات (أيام)', key: 'متوسط الفترة بين المبيعات (أيام)', width: 100, align: 'center' },
+        {
+            title: 'دوران المخزون', dataIndex: 'معدل دوران المخزون', key: 'معدل دوران المخزون', width: 90, align: 'center',
             render: val => formatQuantity(val)
         },
-        { 
-            title: 'فترة التخزين المتوقعة (أيام)', 
-            dataIndex: 'فترة التخزين المتوقعة (أيام)', 
-            width: 200,
-            align: 'center',
+        {
+            title: 'التخزين المتوقع', dataIndex: 'فترة التخزين المتوقعة (أيام)', key: 'فترة التخزين المتوقعة (أيام)', width: 100, align: 'center',
             render: val => val === Infinity ? '∞' : val
         },
-        { 
-            title: 'مؤشر الخطورة', 
-            dataIndex: 'مؤشر الخطورة', 
-            width: 120,
-            align: 'center',
-            render: val => (
-                <strong style={{ color: val > 70 ? 'red' : val > 40 ? 'orange' : 'green' }}>
-                    {val}
-                </strong>
-            )
+        {
+            title: 'مؤشر الخطورة', dataIndex: 'مؤشر الخطورة', key: 'مؤشر الخطورة', width: 100, align: 'center',
+            render: val => {
+                const num = parseFloat(val) || 0;
+                return <strong style={{ color: num > 70 ? '#ff4d4f' : num > 40 ? '#fa8c16' : '#52c41a' }}>{val}</strong>
+            }
         },
-        { 
-            title: 'تصنيف الخطورة', 
-            dataIndex: 'تصنيف الخطورة', 
-            width: 120,
-            align: 'center',
+        {
+            title: 'تصنيف الخطورة', dataIndex: 'تصنيف الخطورة', key: 'تصنيف الخطورة', width: 100, align: 'center',
             render: text => <Tag color={getRiskColor(text)}>{text}</Tag>
         }
     ];
 
-    // Calculate summary statistics
-    const totalItems = data.length;
-    const highRiskItems = data.filter(item => item['تصنيف الخطورة'] === 'عالي').length;
-    const mediumRiskItems = data.filter(item => item['تصنيف الخطورة'] === 'متوسط').length;
-    const lowRiskItems = data.filter(item => item['تصنيف الخطورة'] === 'منخفض').length;
-    const totalCurrentQuantity = data.reduce((sum, item) => sum + (parseFloat(item['الكمية الحالية']) || 0), 0);
+    const visibleColumns = useMemo(() =>
+        allColumns.filter(col => columnVisibility[col.dataIndex || col.key] !== false),
+        [columnVisibility]);
 
-    const tableSummary = (pageData) => {
-        return (
-            <Table.Summary.Row>
-                <Table.Summary.Cell index={0} colSpan={4} align="center">
-                    <strong>الإجمالي</strong>
-                </Table.Summary.Cell>
-                <Table.Summary.Cell index={4} align="right">
-                    <strong>{formatQuantity(totalCurrentQuantity)}</strong>
-                </Table.Summary.Cell>
-                <Table.Summary.Cell index={5} colSpan={7} align="center">
-                    -
-                </Table.Summary.Cell>
-            </Table.Summary.Row>
-        );
-    };
+    const handleColumnVisibilityChange = useCallback((newVisibility) => setColumnVisibility(newVisibility), []);
+    const handleSortOrderChange = useCallback((newSortOrder) => setSortOrder(newSortOrder), []);
+    const handlePaginationChange = useCallback((newPagination) => setPagination(newPagination), []);
+    const handleDensityChange = useCallback((newDensity) => setDensity(newDensity), []);
 
     return (
         <UnifiedPageLayout
-            title="مخاطر الركود"
-            description="تحليل مخاطر الركود للمواد في المخزون بناءً على أنماط الحركة"
-            data={data}
-            columns={columns}
+            title={`تحليل مخاطر الركود (${sortedData.length} سجل)`}
+            description="تحليل مخاطر الركود للمواد في المخزون بناءً على أنماط الحركة والمبيعات التاريخية."
+            interpretation="يحدد هذا التقرير الأصناف التي تتحرك ببطء في مخزنك. 'مؤشر الخطورة' هو رقم مركب يجمع بين طول فترة التخزين وضعف معدل الدوران. يساعدك هذا في التعرف على البضاعة التي قد 'تموت' في المخزن وتحتاج إلى تصفية أو عروض خاصة قبل فوات الأوان."
+            data={sortedData}
+            columns={visibleColumns}
             filename="stagnation_risk"
             allReportsData={allReportsData}
+            availableReports={availableReports}
             reportKey="stagnationRisk"
+            onColumnVisibilityChange={handleColumnVisibilityChange}
+            onSortOrderChange={handleSortOrderChange}
+            onPaginationChange={handlePaginationChange}
+            pagination={pagination}
+            onDensityChange={handleDensityChange}
+            density={density}
+            filterData={data}
+            filterDataType="inventory"
+            onFilterChange={setFilters}
+            category="risk"
         >
             <UnifiedTable
-                dataSource={data}
-                columns={columns}
+                headerExtra={
+                    <NavigationTabs
+                        value={selectedTab}
+                        onChange={(e) => {
+                            setSelectedTab(e.target.value);
+                            setPagination(prev => ({ ...prev, current: 1 }));
+                        }}
+                        tabs={tabsArray}
+                    />
+                }
+                dataSource={sortedData}
+                columns={visibleColumns}
                 rowKey="م"
-                title={`تحليل مخاطر الركود (${data.length} صنف)`}
-                summary={tableSummary}
-                pagination={{ 
-                    pageSize: 50,
-                    showSizeChanger: true,
-                    pageSizeOptions: ['25', '50', '100', '200']
+                scroll={{ x: 1800 }}
+                size={density}
+                pagination={{ ...pagination, total: activeList.length, showSizeChanger: true }}
+                onPaginationChange={handlePaginationChange}
+                virtualized={false}
+                title={`مخاطر الركود - ${selectedTab === 'all' ? 'الكل' : selectedTab} (${activeList.length} صنف)`}
+                summary={(pageData) => {
+                    const pageTotals = {
+                        qty: pageData.reduce((sum, item) => sum + (parseFloat(item['الكمية الحالية']) || 0), 0)
+                    };
+                    return (
+                        <>
+                            <Table.Summary.Row>
+                                <Table.Summary.Cell index={0} colSpan={4}>
+                                    <strong className="unified-table-summary">إجمالي أرقام هذه الصفحة</strong>
+                                </Table.Summary.Cell>
+                                <Table.Summary.Cell index={4}>
+                                    <strong className="unified-table-summary">{formatQuantity(pageTotals.qty)}</strong>
+                                </Table.Summary.Cell>
+                                <Table.Summary.Cell index={5} colSpan={7}></Table.Summary.Cell>
+                            </Table.Summary.Row>
+                            <Table.Summary.Row>
+                                <Table.Summary.Cell index={0} colSpan={4}>
+                                    <strong className="unified-table-summary">الإجمالي الكلي للقائمة</strong>
+                                </Table.Summary.Cell>
+                                <Table.Summary.Cell index={4}>
+                                    <strong className="unified-table-summary">{formatQuantity(grandTotals.qty)}</strong>
+                                </Table.Summary.Cell>
+                                <Table.Summary.Cell index={5} colSpan={7}></Table.Summary.Cell>
+                            </Table.Summary.Row>
+                        </>
+                    );
                 }}
-                scroll={{ x: 1800, y: 600 }}
-                size="middle"
             />
-            
-            <div style={{ 
-                marginTop: 20, 
-                padding: 15, 
-                backgroundColor: '#f9f9f9', 
-                borderRadius: 5,
-                border: '1px solid #eee'
-            }}>
-                <h3>إحصائيات التقرير</h3>
-                <div style={{ display: 'flex', justifyContent: 'space-around', textAlign: 'center' }}>
-                    <div>
-                        <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#1890ff' }}>{totalItems}</div>
-                        <div>إجمالي الأصناف</div>
-                    </div>
-                    <div>
-                        <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#ff4d4f' }}>{highRiskItems}</div>
-                        <div>أصناف عالية الخطورة</div>
-                    </div>
-                    <div>
-                        <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#fa8c16' }}>{mediumRiskItems}</div>
-                        <div>أصناف متوسطة الخطورة</div>
-                    </div>
-                    <div>
-                        <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#52c41a' }}>{lowRiskItems}</div>
-                        <div>أصناف منخفضة الخطورة</div>
-                    </div>
-                </div>
-            </div>
-            
-            <div style={{ 
-                marginTop: 20, 
-                padding: 15, 
-                backgroundColor: '#f9f9f9', 
-                borderRadius: 5,
-                border: '1px solid #eee'
-            }}>
-                <h3>تفسير التقرير</h3>
-                <ul>
-                    <li><strong>الكمية الحالية:</strong> الكمية الموجودة في المخزون حالياً</li>
-                    <li><strong>عدد مرات البيع:</strong> عدد مرات بيع الصنف خلال الفترة المحددة</li>
-                    <li><strong>متوسط الكمية المباعة:</strong> متوسط الكمية المباعة في كل عملية بيع</li>
-                    <li><strong>متوسط الفترة بين المبيعات:</strong> متوسط الأيام بين عملية بيع وأخرى</li>
-                    <li><strong>معدل دوران المخزون:</strong> عدد مرات بيع المخزون كاملاً خلال السنة</li>
-                    <li><strong>فترة التخزين المتوقعة:</strong> الأيام المتوقعة لبيع الكمية الحالية</li>
-                    <li><strong>مؤشر الخطورة:</strong> درجة الخطورة (0-100) حيث 100 يعني أعلى خطورة</li>
-                    <li><strong>تصنيف الخطورة:</strong> تصنيف مبسط للخطورة (عالي/متوسط/منخفض)</li>
-                </ul>
-            </div>
         </UnifiedPageLayout>
     );
-};
+});;
 
 export default StagnationRiskPage;

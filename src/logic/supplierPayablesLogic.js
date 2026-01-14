@@ -11,19 +11,9 @@ import {
   Decimal
 } from '../utils/financialCalculations.js';
 
-const convertToObjects = (data) => {
-  if (!data || data.length < 2) return [];
-  const headers = data[0];
-  return data.slice(1).map(row => {
-    const obj = {};
-    headers.forEach((header, index) => {
-      obj[header] = row[index];
-    });
-    return obj;
-  });
-};
+import { convertToObjects } from '../utils/dataUtils.js';
 
-export const calculateSupplierPayables = (supplierbalancesRaw, endingInventoryList) => {
+export const calculateSupplierPayables = async (supplierbalancesRaw, endingInventoryList) => {
   const startTime = performance.now();
 
   const supplierbalances = convertToObjects(supplierbalancesRaw);
@@ -33,7 +23,13 @@ export const calculateSupplierPayables = (supplierbalancesRaw, endingInventoryLi
   const inventoryValueBySupplier = new Map();
   const inventoryBreakdownBySupplier = new Map();
 
-  for (const item of endingInventoryList) {
+  for (let i = 0; i < endingInventoryList.length; i++) {
+    // Yield every 1000 items
+    if (i > 0 && i % 1000 === 0) {
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+
+    const item = endingInventoryList[i];
     const supplier = item['المورد'];
     const totalValue = roundToInteger(item['الاجمالي'] || 0) || new Decimal(0);
     const movementStatus = item['بيان الحركة'];
@@ -100,7 +96,13 @@ export const calculateSupplierPayables = (supplierbalancesRaw, endingInventoryLi
   }
 
   const payablesReport = [];
-  for (const balanceRecord of supplierbalances) {
+  for (let i = 0; i < supplierbalances.length; i++) {
+    // Yield every 500 records
+    if (i > 0 && i % 500 === 0) {
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+
+    const balanceRecord = supplierbalances[i];
     const supplier = balanceRecord['المورد'];
 
     const debitRaw = (balanceRecord['مدين'] ?? balanceRecord['المدين']) || 0;

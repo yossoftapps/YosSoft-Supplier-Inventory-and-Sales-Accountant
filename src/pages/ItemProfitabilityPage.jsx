@@ -1,452 +1,221 @@
-import React, { useState } from 'react';
-import { Typography, Alert, Tag, Card, Row, Col } from 'antd';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import React, { useState, useMemo, useCallback, memo } from 'react';
+import { Typography, Table, Tag } from 'antd';
+import { useTranslation } from 'react-i18next';
 import { formatMoney, formatQuantity } from '../utils/financialCalculations';
 import UnifiedPageLayout from '../components/UnifiedPageLayout';
 import UnifiedTable from '../components/UnifiedTable';
+import safeString from '../utils/safeString.js';
+import UnifiedAlert from '../components/UnifiedAlert';
+import NavigationTabs from '../components/NavigationTabs';
+import { ITEM_PROFITABILITY_DEFAULT_COLUMNS } from '../constants/itemProfitabilityColumns.js';
 
-const { Title } = Typography;
-
-// Colors for charts
-const COLORS = ['#1890ff', '#52c41a', '#faad14', '#722ed1', '#f5222d', '#eb2f96'];
-const PIE_COLORS = ['#1890ff', '#52c41a', '#faad14', '#722ed1', '#f5222d', '#eb2f96'];
-
-const ItemProfitabilityPage = ({ data, allReportsData }) => {
+const ItemProfitabilityPage = memo(({ data, allReportsData, availableReports }) => {
+    const { t } = useTranslation();
     const [columnVisibility, setColumnVisibility] = useState({});
-    const [pagination, setPagination] = useState({ pageSize: 100 });
+    const [sortOrder, setSortOrder] = useState({});
+    const [pagination, setPagination] = useState({ pageSize: 50 });
+    const [density, setDensity] = useState('small');
     const [filters, setFilters] = useState({});
+    const [selectedTab, setSelectedTab] = useState('all');
 
     if (!data || data.length === 0) {
         return (
-            <div style={{ padding: '20px' }}>
-                <Alert 
-                    message="لا توجد بيانات للعرض" 
-                    description="يرجى استيراد البيانات ومعالجتها أولاً" 
-                    type="info" 
-                    showIcon 
-                />
+            <div className="padding-lg">
+                <UnifiedAlert message={t('noData')} description={t('importExcelFirst')} />
             </div>
         );
     }
 
-    // Apply filters to data
-    const filteredData = data.filter(item => {
-        // Material code filter
-        if (filters.materialCode && item['رمز المادة']) {
-            if (!item['رمز المادة'].toString().toLowerCase().includes(filters.materialCode.toLowerCase())) {
-                return false;
+    // Apply Filters
+    const filteredData = useMemo(() => {
+        const smartSearch = safeString(filters.smartSearch).toLowerCase();
+        if (!smartSearch) return data;
+        return data.filter(item =>
+            Object.values(item).some(val => String(val).toLowerCase().includes(smartSearch))
+        );
+    }, [data, filters]);
+
+    // Grouping for tabs
+    const tabData = useMemo(() => {
+        const grouped = { all: filteredData };
+        filteredData.forEach(item => {
+            const margin = parseFloat(item['نسبة هامش الربح %']) || 0;
+            let cls;
+            if (margin > 50) cls = 'هامش مرتفع';
+            else if (margin > 20) cls = 'هامش متوسط';
+            else if (margin > 0) cls = 'هامش منخفض';
+            else if (margin === 0) cls = 'بلا ربح';
+            else cls = 'خسارة';
+
+            if (!grouped[cls]) grouped[cls] = [];
+            grouped[cls].push(item);
+        });
+        return grouped;
+    }, [filteredData]);
+
+    const activeList = tabData[selectedTab] || [];
+
+    // Apply Sorting
+    const sortedData = useMemo(() => {
+        if (!sortOrder.field || !sortOrder.order) return activeList;
+
+        return [...activeList].sort((a, b) => {
+            const aValue = a[sortOrder.field];
+            const bValue = b[sortOrder.field];
+            if (aValue == null && bValue == null) return 0;
+            if (aValue == null) return sortOrder.order === 'asc' ? -1 : 1;
+            if (bValue == null) return sortOrder.order === 'asc' ? 1 : -1;
+            const aNum = parseFloat(aValue);
+            const bNum = parseFloat(bValue);
+            if (!isNaN(aNum) && !isNaN(bNum)) {
+                return sortOrder.order === 'asc' ? aNum - bNum : bNum - aNum;
             }
+            const comparison = safeString(aValue).localeCompare(safeString(bValue));
+            return sortOrder.order === 'asc' ? comparison : -comparison;
+        });
+    }, [activeList, sortOrder]);
+
+    const grandTotals = useMemo(() => {
+        return {
+            count: activeList.reduce((sum, item) => sum + (item['عدد عمليات البيع'] || 0), 0),
+            qty: activeList.reduce((sum, item) => sum + (parseFloat(item['إجمالي الكمية المباعة']) || 0), 0),
+            sales: activeList.reduce((sum, item) => sum + (parseFloat(item['إجمالي قيمة المبيعات']) || 0), 0),
+            cost: activeList.reduce((sum, item) => sum + (parseFloat(item['إجمالي تكلفة المبيعات']) || 0), 0),
+            profit: activeList.reduce((sum, item) => sum + (parseFloat(item['إجمالي الربح']) || 0), 0)
+        };
+    }, [activeList]);
+
+    const tabsArray = useMemo(() => {
+        const arr = [{ value: 'all', label: `الكل (${tabData.all?.length || 0})` }];
+        Object.keys(tabData).filter(k => k !== 'all').forEach(k => {
+            arr.push({ value: k, label: `${k} (${tabData[k]?.length || 0})` });
+        });
+        return arr;
+    }, [tabData]);
+
+    const getProfitColor = (v) => {
+        if (v > 50) return 'green';
+        if (v > 20) return 'blue';
+        if (v > 0) return 'orange';
+        return 'red';
+    };
+
+    // Start from canonical column definitions, then add UI-specific renderers where applicable
+    const allColumns = ITEM_PROFITABILITY_DEFAULT_COLUMNS.map(col => {
+        if (col.dataIndex === 'إجمالي الربح') {
+            return { ...col, render: v => <strong style={{ color: v >= 0 ? '#52c41a' : '#ff4d4f' }}>{formatMoney(v)}</strong> };
         }
-        
-        // Material name filter
-        if (filters.materialName && item['اسم المادة']) {
-            if (!item['اسم المادة'].toString().toLowerCase().includes(filters.materialName.toLowerCase())) {
-                return false;
-            }
+        if (col.dataIndex === 'نسبة هامش الربح %') {
+            return { ...col, render: v => <Tag color={getProfitColor(v)}>{v}%</Tag> };
         }
-        
-        return true;
+        if (col.dataIndex === 'نسبة المساهمة في أرباح الشركة %') {
+            return { ...col, render: (_, record) => {
+                const itemProfit = parseFloat(record['إجمالي الربح']) || 0;
+                const totalProfit = activeList.reduce((sum, item) => sum + (parseFloat(item['إجمالي الربح']) || 0), 0);
+                if (totalProfit === 0) return '0%';
+                const ratio = (itemProfit / totalProfit) * 100;
+                return <Tag color={ratio > 10 ? 'green' : 'default'}>{ratio.toFixed(2)}%</Tag>;
+            } };
+        }
+        if (col.dataIndex === 'profitStatement') {
+            return { ...col, render: (_, record) => {
+                const totalProfit = parseFloat(record['إجمالي الربح']) || 0;
+                const margin = parseFloat(record['نسبة هامش الربح %']) || 0;
+                if (totalProfit <= 0) return 'خسارة';
+                if (totalProfit > 0 && margin >= 5) return 'ربح';
+                if (totalProfit > 0 && margin < 5) return 'ربح ضعيف';
+                return '-';
+            } };
+        }
+        return col;
     });
 
-    // Function to determine tag color based on profit margin
-    const getProfitMarginColor = (marginPercent) => {
-        if (marginPercent > 50) return 'green';
-        if (marginPercent > 20) return 'blue';
-        if (marginPercent > 0) return 'orange';
-        if (marginPercent === 0) return 'default';
-        return 'red';
-    };
+    const visibleColumns = useMemo(() =>
+        allColumns.filter(col => columnVisibility[col.dataIndex || col.key] !== false),
+        [columnVisibility]);
 
-    // Function to determine tag color based on contribution percentage
-    const getContributionColor = (contributionPercent) => {
-        if (contributionPercent > 20) return 'green';
-        if (contributionPercent > 10) return 'blue';
-        if (contributionPercent > 5) return 'orange';
-        if (contributionPercent > 0) return 'default';
-        return 'red';
-    };
-
-    // Prepare data for charts (using filtered data)
-    const topProfitableItems = [...filteredData]
-        .sort((a, b) => {
-            const profitA = typeof a['إجمالي الربح'] === 'string' ? parseFloat(a['إجمالي الربح']) || 0 : a['إجمالي الربح'] || 0;
-            const profitB = typeof b['إجمالي الربح'] === 'string' ? parseFloat(b['إجمالي الربح']) || 0 : b['إجمالي الربح'] || 0;
-            return profitB - profitA;
-        })
-        .slice(0, 10)
-        .map(item => ({
-            name: item['اسم المادة'],
-            profit: typeof item['إجمالي الربح'] === 'string' ? parseFloat(item['إجمالي الربح']) || 0 : item['إجمالي الربح'] || 0,
-            sales: typeof item['إجمالي قيمة المبيعات'] === 'string' ? parseFloat(item['إجمالي قيمة المبيعات']) || 0 : item['إجمالي قيمة المبيعات'] || 0,
-            cost: typeof item['إجمالي تكلفة المبيعات'] === 'string' ? parseFloat(item['إجمالي تكلفة المبيعات']) || 0 : item['إجمالي تكلفة المبيعات'] || 0
-        }));
-
-    const topContributors = [...filteredData]
-        .sort((a, b) => {
-            const contribA = typeof a['نسبة المساهمة في أرباح الشركة %'] === 'string' ? parseFloat(a['نسبة المساهمة في أرباح الشركة %']) || 0 : a['نسبة المساهمة في أرباح الشركة %'] || 0;
-            const contribB = typeof b['نسبة المساهمة في أرباح الشركة %'] === 'string' ? parseFloat(b['نسبة المساهمة في أرباح الشركة %']) || 0 : b['نسبة المساهمة في أرباح الشركة %'] || 0;
-            return contribB - contribA;
-        })
-        .slice(0, 10)
-        .map(item => ({
-            name: item['اسم المادة'],
-            contribution: typeof item['نسبة المساهمة في أرباح الشركة %'] === 'string' ? parseFloat(item['نسبة المساهمة في أرباح الشركة %']) || 0 : item['نسبة المساهمة في أرباح الشركة %'] || 0
-        }));
-
-    const profitMarginDistribution = [...filteredData]
-        .reduce((acc, item) => {
-            const margin = typeof item['نسبة هامش الربح %'] === 'string' ? parseFloat(item['نسبة هامش الربح %']) || 0 : item['نسبة هامش الربح %'] || 0;
-            if (margin > 50) acc.high++;
-            else if (margin > 20) acc.medium++;
-            else if (margin > 0) acc.low++;
-            else if (margin === 0) acc.zero++;
-            else acc.negative++;
-            return acc;
-        }, { high: 0, medium: 0, low: 0, zero: 0, negative: 0 });
-
-    const profitMarginData = [
-        { name: 'هامش ربح مرتفع (>50%)', value: profitMarginDistribution.high },
-        { name: 'هامش ربح متوسط (20-50%)', value: profitMarginDistribution.medium },
-        { name: 'هامش ربح منخفض (0-20%)', value: profitMarginDistribution.low },
-        { name: 'بدون ربح (0%)', value: profitMarginDistribution.zero },
-        { name: 'خسارة (<0%)', value: profitMarginDistribution.negative }
-    ];
-
-    const columns = [
-        { 
-            title: 'م', 
-            dataIndex: 'م', 
-            width: 60, 
-            align: 'center',
-            fixed: 'left'
-        },
-        { 
-            title: 'رمز المادة', 
-            dataIndex: 'رمز المادة', 
-            width: 120,
-            fixed: 'left'
-        },
-        { 
-            title: 'اسم المادة', 
-            dataIndex: 'اسم المادة', 
-            width: 200
-        },
-        { 
-            title: 'الوحدة', 
-            dataIndex: 'الوحدة', 
-            width: 80,
-            align: 'center'
-        },
-        { 
-            title: 'عدد عمليات البيع', 
-            dataIndex: 'عدد عمليات البيع', 
-            width: 120,
-            align: 'center'
-        },
-        { 
-            title: 'الكمية المباعة', 
-            dataIndex: 'إجمالي الكمية المباعة', 
-            width: 120,
-            align: 'right',
-            render: val => {
-                // Ensure we're working with a valid number
-                const numValue = typeof val === 'string' ? parseFloat(val) || 0 : val || 0;
-                return formatQuantity(numValue);
-            }
-        },
-        { 
-            title: 'قيمة المبيعات', 
-            dataIndex: 'إجمالي قيمة المبيعات', 
-            width: 120,
-            align: 'right',
-            render: val => {
-                // Ensure we're working with a valid number
-                const numValue = typeof val === 'string' ? parseFloat(val) || 0 : val || 0;
-                return formatMoney(numValue);
-            }
-        },
-        { 
-            title: 'تكلفة المبيعات', 
-            dataIndex: 'إجمالي تكلفة المبيعات', 
-            width: 120,
-            align: 'right',
-            render: val => {
-                // Ensure we're working with a valid number
-                const numValue = typeof val === 'string' ? parseFloat(val) || 0 : val || 0;
-                return formatMoney(numValue);
-            }
-        },
-        { 
-            title: 'إجمالي الربح', 
-            dataIndex: 'إجمالي الربح', 
-            width: 120,
-            align: 'right',
-            render: val => {
-                // Ensure we're working with a valid number
-                const numValue = typeof val === 'string' ? parseFloat(val) || 0 : val || 0;
-                return (
-                    <span style={{ 
-                        color: numValue < 0 ? 'red' : numValue > 0 ? 'green' : 'inherit',
-                        fontWeight: 'bold'
-                    }}>
-                        {formatMoney(numValue)}
-                    </span>
-                );
-            }
-        },
-        { 
-            title: 'نسبة هامش الربح %', 
-            dataIndex: 'نسبة هامش الربح %', 
-            width: 150,
-            align: 'center',
-            render: val => {
-                // Ensure we're working with a valid number
-                const numValue = typeof val === 'string' ? parseFloat(val) || 0 : val || 0;
-                return (
-                    <Tag color={getProfitMarginColor(numValue)}>
-                        {numValue}%
-                    </Tag>
-                );
-            }
-        },
-        { 
-            title: 'نسبة المساهمة %', 
-            dataIndex: 'نسبة المساهمة في أرباح الشركة %', 
-            width: 150,
-            align: 'center',
-            render: val => {
-                // Ensure we're working with a valid number
-                const numValue = typeof val === 'string' ? parseFloat(val) || 0 : val || 0;
-                return (
-                    <Tag color={getContributionColor(numValue)}>
-                        {numValue}%
-                    </Tag>
-                );
-            }
-        }
-    ];
-
-    // Filter columns based on visibility settings
-    const visibleColumns = columns.filter(col => 
-        columnVisibility[col.dataIndex || col.key] !== false
-    );
-
-    // Table summary function
-    const tableSummary = (pageData) => {
-        // Calculate totals
-        let totalSalesCount = 0;
-        let totalQuantitySold = 0;
-        let totalSalesValue = 0;
-        let totalCost = 0;
-        let totalProfit = 0;
-        
-        pageData.forEach(item => {
-            totalSalesCount += item['عدد عمليات البيع'] || 0;
-            totalQuantitySold += typeof item['إجمالي الكمية المباعة'] === 'string' 
-                ? parseFloat(item['إجمالي الكمية المباعة']) || 0 
-                : item['إجمالي الكمية المباعة'] || 0;
-            totalSalesValue += typeof item['إجمالي قيمة المبيعات'] === 'string' 
-                ? parseFloat(item['إجمالي قيمة المبيعات']) || 0 
-                : item['إجمالي قيمة المبيعات'] || 0;
-            totalCost += typeof item['إجمالي تكلفة المبيعات'] === 'string' 
-                ? parseFloat(item['إجمالي تكلفة المبيعات']) || 0 
-                : item['إجمالي تكلفة المبيعات'] || 0;
-            totalProfit += typeof item['إجمالي الربح'] === 'string' 
-                ? parseFloat(item['إجمالي الربح']) || 0 
-                : item['إجمالي الربح'] || 0;
-        });
-        
-        // Ensure all totals are valid numbers before formatting
-        totalQuantitySold = typeof totalQuantitySold === 'string' 
-            ? parseFloat(totalQuantitySold) || 0 
-            : totalQuantitySold || 0;
-        totalSalesValue = typeof totalSalesValue === 'string' 
-            ? parseFloat(totalSalesValue) || 0 
-            : totalSalesValue || 0;
-        totalCost = typeof totalCost === 'string' 
-            ? parseFloat(totalCost) || 0 
-            : totalCost || 0;
-        totalProfit = typeof totalProfit === 'string' 
-            ? parseFloat(totalProfit) || 0 
-            : totalProfit || 0;
-        
-        return (
-            <Table.Summary.Row style={{ background: '#f0f0f0', fontWeight: 'bold' }}>
-                <Table.Summary.Cell index={0} colSpan={4} align="center">
-                    الإجمالي
-                </Table.Summary.Cell>
-                <Table.Summary.Cell index={4} align="center">
-                    {totalSalesCount}
-                </Table.Summary.Cell>
-                <Table.Summary.Cell index={5} align="right">
-                    {formatQuantity(totalQuantitySold)}
-                </Table.Summary.Cell>
-                <Table.Summary.Cell index={6} align="right">
-                    {formatMoney(totalSalesValue)}
-                </Table.Summary.Cell>
-                <Table.Summary.Cell index={7} align="right">
-                    {formatMoney(totalCost)}
-                </Table.Summary.Cell>
-                <Table.Summary.Cell index={8} align="right">
-                    <span style={{ 
-                        color: totalProfit < 0 ? 'red' : totalProfit > 0 ? 'green' : 'inherit',
-                        fontWeight: 'bold'
-                    }}>
-                        {formatMoney(totalProfit)}
-                    </span>
-                </Table.Summary.Cell>
-                <Table.Summary.Cell index={9} colSpan={2} align="center">
-                    -
-                </Table.Summary.Cell>
-            </Table.Summary.Row>
-        );
-    };
-
-    // Handle filter changes
-    const handleFilterChange = (newFilters) => {
-        setFilters(newFilters);
-    };
+    const handleColumnVisibilityChange = useCallback((newVisibility) => setColumnVisibility(newVisibility), []);
+    const handleSortOrderChange = useCallback((newSortOrder) => setSortOrder(newSortOrder), []);
+    const handlePaginationChange = useCallback((newPagination) => setPagination(newPagination), []);
+    const handleDensityChange = useCallback((newDensity) => setDensity(newDensity), []);
 
     return (
         <UnifiedPageLayout
-            title="تحليل ربحية الأصناف"
-            description="تحليل ربحية الأصناف لتحديد الأصناف الأكثر مساهمة في أرباح الشركة وتقييم هامش الربح لكل صنف."
-            data={filteredData}
+            title={`تحليل ربحية الأصناف (${activeList.length} صنف)`}
+            description="تشريح دقيق لأداء المبيعات على مستوى الصنف الواحد، يكشف محركات الربح ومصادر الخسارة."
+            interpretation="يجاوب هذا التقرير على سؤال 'ما هي الأصناف التي تعيل المحل فعلياً؟'. فالمبيعات العالية لا تعني دائماً أرباحاً عالية. 'نسبة المساهمة في الأرباح' هي أهم مؤشر هنا، فهي تخبرك بدور كل صنف في دفع مصاريف المحل الكلية. الأصناف ذات الهامش المنخفض والمساهمة الضعيفة قد تحتاج لمراجعة الأسعار أو قرارات الشراء."
+            data={sortedData}
             columns={visibleColumns}
-            filename="item_profitability_analysis"
+            filename={`item_profitability_${selectedTab}`}
             allReportsData={allReportsData}
+            availableReports={availableReports}
             reportKey="itemProfitability"
-            onColumnVisibilityChange={setColumnVisibility}
-            onPaginationChange={setPagination}
+            onColumnVisibilityChange={handleColumnVisibilityChange}
+            onSortOrderChange={handleSortOrderChange}
+            onPaginationChange={handlePaginationChange}
             pagination={pagination}
+            onDensityChange={handleDensityChange}
+            density={density}
             filterData={data}
             filterDataType="sales"
-            onFilterChange={handleFilterChange}
+            onFilterChange={setFilters}
+            category="financial"
+            exportColumns={allColumns}
         >
-            {/* Charts Section */}
-            <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-                <Col xs={24} lg={12}>
-                    <Card title="أهم الأصناف ربحية" style={{ height: '100%' }}>
-                        <ResponsiveContainer width="100%" height={300}>
-                            <BarChart
-                                data={topProfitableItems}
-                                layout="vertical"
-                                margin={{ top: 5, right: 30, left: 100, bottom: 5 }}
-                            >
-                                <CartesianGrid strokeDasharray="3 3" />
-                                <XAxis type="number" />
-                                <YAxis dataKey="name" type="category" scale="band" width={80} />
-                                <Tooltip 
-                                    formatter={(value) => [formatMoney(value), 'الربح']}
-                                    labelFormatter={(value) => `الصنف: ${value}`}
-                                />
-                                <Legend />
-                                <Bar dataKey="profit" name="الربح" fill="#52c41a" />
-                            </BarChart>
-                        </ResponsiveContainer>
-                    </Card>
-                </Col>
-                
-                <Col xs={24} lg={12}>
-                    <Card title="توزيع هامش الربح" style={{ height: '100%' }}>
-                        <ResponsiveContainer width="100%" height={300}>
-                            <PieChart>
-                                <Pie
-                                    data={profitMarginData}
-                                    cx="50%"
-                                    cy="50%"
-                                    labelLine={true}
-                                    outerRadius={80}
-                                    fill="#8884d8"
-                                    dataKey="value"
-                                    label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                                >
-                                    {profitMarginData.map((entry, index) => (
-                                        <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
-                                    ))}
-                                </Pie>
-                                <Tooltip formatter={(value) => [value, 'عدد الأصناف']} />
-                                <Legend />
-                            </PieChart>
-                        </ResponsiveContainer>
-                    </Card>
-                </Col>
-                
-                <Col xs={24} lg={12}>
-                    <Card title="أهم المساهمين في الأرباح" style={{ height: '100%' }}>
-                        <ResponsiveContainer width="100%" height={300}>
-                            <BarChart
-                                data={topContributors}
-                                margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
-                            >
-                                <CartesianGrid strokeDasharray="3 3" />
-                                <XAxis dataKey="name" />
-                                <YAxis />
-                                <Tooltip 
-                                    formatter={(value) => [`${value}%`, 'المساهمة']}
-                                    labelFormatter={(value) => `الصنف: ${value}`}
-                                />
-                                <Legend />
-                                <Bar dataKey="contribution" name="المساهمة %" fill="#1890ff" />
-                            </BarChart>
-                        </ResponsiveContainer>
-                    </Card>
-                </Col>
-                
-                <Col xs={24} lg={12}>
-                    <Card title="مقارنة المبيعات والتكلفة" style={{ height: '100%' }}>
-                        <ResponsiveContainer width="100%" height={300}>
-                            <BarChart
-                                data={topProfitableItems}
-                                margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
-                            >
-                                <CartesianGrid strokeDasharray="3 3" />
-                                <XAxis dataKey="name" />
-                                <YAxis />
-                                <Tooltip formatter={(value) => formatMoney(value)} />
-                                <Legend />
-                                <Bar dataKey="sales" name="المبيعات" fill="#52c41a" />
-                                <Bar dataKey="cost" name="التكلفة" fill="#faad14" />
-                            </BarChart>
-                        </ResponsiveContainer>
-                    </Card>
-                </Col>
-            </Row>
-            
             <UnifiedTable
-                dataSource={filteredData}
+                headerExtra={
+                    <NavigationTabs
+                        value={selectedTab}
+                        onChange={(e) => {
+                            setSelectedTab(e.target.value);
+                            setPagination(prev => ({ ...prev, current: 1 }));
+                        }}
+                        tabs={tabsArray}
+                    />
+                }
+                dataSource={sortedData}
                 columns={visibleColumns}
                 rowKey="م"
-                title={`تحليل ربحية الأصناف (${filteredData.length} صنف)`}
-                summary={tableSummary}
-                pagination={{ 
-                    pageSize: pagination.pageSize, 
-                    showSizeChanger: true, 
-                    pageSizeOptions: ['25', '50', '100', '200'] 
+                scroll={{ x: 1800 }}
+                size={density}
+                pagination={{ ...pagination, total: activeList.length, showSizeChanger: true }}
+                onPaginationChange={handlePaginationChange}
+                virtualized={false}
+                title={`تحليل هوامش ومساهمات الأرباح - ${selectedTab === 'all' ? 'الكل' : selectedTab} (${activeList.length} سجل)`}
+                summary={(pageData) => {
+                    const pageTotals = {
+                        qty: pageData.reduce((sum, item) => sum + (parseFloat(item['إجمالي الكمية المباعة']) || 0), 0),
+                        sales: pageData.reduce((sum, item) => sum + (parseFloat(item['إجمالي قيمة المبيعات']) || 0), 0),
+                        profit: pageData.reduce((sum, item) => sum + (parseFloat(item['إجمالي الربح']) || 0), 0)
+                    };
+                    return (
+                        <>
+                            <Table.Summary.Row>
+                                <Table.Summary.Cell index={0} colSpan={5}>
+                                    <strong className="unified-table-summary">إجمالي أرقام هذه الصفحة</strong>
+                                </Table.Summary.Cell>
+                                <Table.Summary.Cell index={5}><strong className="unified-table-summary">{formatQuantity(pageTotals.qty)}</strong></Table.Summary.Cell>
+                                <Table.Summary.Cell index={6}><strong className="unified-table-summary">{formatMoney(pageTotals.sales)}</strong></Table.Summary.Cell>
+                                <Table.Summary.Cell index={7}></Table.Summary.Cell>
+                                <Table.Summary.Cell index={8}><strong className="unified-table-summary">{formatMoney(pageTotals.profit)}</strong></Table.Summary.Cell>
+                                <Table.Summary.Cell index={9} colSpan={5}></Table.Summary.Cell>
+                            </Table.Summary.Row>
+                            <Table.Summary.Row>
+                                <Table.Summary.Cell index={0} colSpan={5}>
+                                    <strong className="unified-table-summary">الإجمالي الكلي للقائمة</strong>
+                                </Table.Summary.Cell>
+                                <Table.Summary.Cell index={5}><strong className="unified-table-summary">{formatQuantity(grandTotals.qty)}</strong></Table.Summary.Cell>
+                                <Table.Summary.Cell index={6}><strong className="unified-table-summary">{formatMoney(grandTotals.sales)}</strong></Table.Summary.Cell>
+                                <Table.Summary.Cell index={7}></Table.Summary.Cell>
+                                <Table.Summary.Cell index={8}><strong className="unified-table-summary">{formatMoney(grandTotals.profit)}</strong></Table.Summary.Cell>
+                                <Table.Summary.Cell index={9} colSpan={5}></Table.Summary.Cell>
+                            </Table.Summary.Row>
+                        </>
+                    );
                 }}
-                scroll={{ x: 1500, y: 600 }}
             />
-            
-            <div style={{ 
-                marginTop: 20, 
-                padding: 15, 
-                backgroundColor: '#f9f9f9', 
-                borderRadius: 5,
-                border: '1px solid #eee'
-            }}>
-                <Typography.Title level={5} style={{ marginTop: 0 }}>تفسير التقرير</Typography.Title>
-                <ul>
-                    <li><strong>عدد عمليات البيع:</strong> عدد مرات بيع الصنف</li>
-                    <li><strong>الكمية المباعة:</strong> إجمالي الكمية المباعة من الصنف</li>
-                    <li><strong>قيمة المبيعات:</strong> إجمالي الإيرادات من بيع الصنف</li>
-                    <li><strong>تكلفة المبيعات:</strong> إجمالي التكلفة المرتبطة ببيع الصنف</li>
-                    <li><strong>إجمالي الربح:</strong> الفرق بين الإيرادات والتكاليف (أخضر = ربح، أحمر = خسارة)</li>
-                    <li><strong>نسبة هامش الربح %:</strong> (الربح ÷ التكلفة) × 100%</li>
-                    <li><strong>نسبة المساهمة %:</strong> مساهمة الصنف في إجمالي أرباح الشركة</li>
-                </ul>
-            </div>
         </UnifiedPageLayout>
     );
-};
+});;
 
 export default ItemProfitabilityPage;

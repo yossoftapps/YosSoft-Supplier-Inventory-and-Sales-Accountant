@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IndexedDB Manager Test</title>
+</head>
+
+<body>
+    <h1>IndexedDB Manager Test</h1>
+    <div id="results"></div>
+
+    <script type="module">
+        import { cacheManager, IndexedDbManager, defaultIndexedDbManager } from '../src/utils/indexedDbManager.js';
+
+        const resultsDiv = document.getElementById('results');
+
+        function log(message) {
+            console.log(message);
+            resultsDiv.innerHTML += '<p>' + message + '</p>';
+        }
+
+        async function runTests() {
+            log('Starting IndexedDB Manager Tests...');
+
+            // Test 1: Browser compatibility
+            log('Test 1: Browser compatibility');
+            log('IndexedDB supported: ' + (typeof indexedDB !== 'undefined'));
+            log('localStorage supported: ' + (typeof localStorage !== 'undefined'));
+            log('Is Electron: ' + (window.process && window.process.versions && window.process.versions.electron ? 'Yes' : 'No'));
+
+            // Test 2: Basic set/get
+            log('Test 2: Basic set/get');
+            try {
+                await cacheManager.set('testStore', 'testKey', { data: 'test value' });
+                const value = await cacheManager.get('testStore', 'testKey');
+                log('Set/Get successful: ' + JSON.stringify(value));
+            } catch (error) {
+                log('Set/Get failed: ' + error.message);
+            }
+
+            // Test 3: TTL
+            log('Test 3: TTL');
+            try {
+                await cacheManager.set('testStore', 'ttlKey', { data: 'expires soon' }, 1000); // 1 second
+                setTimeout(async () => {
+                    const expiredValue = await cacheManager.get('testStore', 'ttlKey');
+                    log('TTL test: ' + (expiredValue === null ? 'Expired correctly' : 'Did not expire'));
+                }, 1500);
+            } catch (error) {
+                log('TTL test failed: ' + error.message);
+            }
+
+            // Test 4: Delete
+            log('Test 4: Delete');
+            try {
+                await cacheManager.set('testStore', 'deleteKey', { data: 'to delete' });
+                await cacheManager.delete('testStore', 'deleteKey');
+                const deletedValue = await cacheManager.get('testStore', 'deleteKey');
+                log('Delete test: ' + (deletedValue === null ? 'Deleted successfully' : 'Not deleted'));
+            } catch (error) {
+                log('Delete test failed: ' + error.message);
+            }
+
+            // Test 5: Clear
+            log('Test 5: Clear');
+            try {
+                await cacheManager.set('testStore', 'clearKey1', { data: 'clear1' });
+                await cacheManager.set('testStore', 'clearKey2', { data: 'clear2' });
+                await cacheManager.clear('testStore');
+                const clearValue1 = await cacheManager.get('testStore', 'clearKey1');
+                const clearValue2 = await cacheManager.get('testStore', 'clearKey2');
+                log('Clear test: ' + (clearValue1 === null && clearValue2 === null ? 'Cleared successfully' : 'Not cleared'));
+            } catch (error) {
+                log('Clear test failed: ' + error.message);
+            }
+
+            // Test 6: Fallback to localStorage (simulate IndexedDB failure)
+            log('Test 6: Fallback behavior');
+            // This is hard to test directly, but we can check if localStorage is used when IndexedDB fails
+            log('Fallback active: ' + cacheManager.fallbackActive);
+
+            log('Tests completed.');
+        }
+
+        runTests();
+    </script>
+</body>
+
+</html>

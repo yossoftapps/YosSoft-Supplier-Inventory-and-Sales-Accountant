@@ -17,14 +17,15 @@ export class IndexedDbManager {
   constructor(dbName = 'YosSoftCache', version = 1, stores = []) {
     // Check if we're in a browser environment
     this.isBrowserEnvironment = typeof window !== 'undefined' && typeof indexedDB !== 'undefined';
-    
+
     if (this.isBrowserEnvironment) {
       this.dbName = dbName;
       this.version = version;
       this.stores = stores;
       this.db = null;
       this.isInitialized = false;
-      
+      this.isIndexedDbPermanentlyUnavailable = false;
+
       // Bind methods
       this.init = this.init.bind(this);
       this.get = this.get.bind(this);
@@ -37,6 +38,7 @@ export class IndexedDbManager {
       // In Node.js environment, provide mock methods
       console.warn('IndexedDB is not available in this environment. Using mock implementation.');
       this.isInitialized = true;
+      this.isIndexedDbPermanentlyUnavailable = true;
     }
   }
 
@@ -54,49 +56,66 @@ export class IndexedDbManager {
       return this.db;
     }
 
-    return new Promise((resolve, reject) => {
-      const request = indexedDB.open(this.dbName, this.version);
+    // If we've already determined that IndexedDB is not usable, skip initialization
+    if (this.isIndexedDbPermanentlyUnavailable) {
+      return Promise.resolve(null);
+    }
 
-      request.onerror = () => {
-        console.error('IndexedDB initialization failed:', request.error);
-        reject(new Error(`Failed to initialize IndexedDB: ${request.error}`));
-      };
+    // Ensure single init attempt with a static promise
+    if (!this._initPromise) {
+      this._initPromise = new Promise((resolve, reject) => {
+        const request = indexedDB.open(this.dbName, this.version);
 
-      request.onsuccess = () => {
-        this.db = request.result;
-        this.isInitialized = true;
-        console.log('IndexedDB initialized successfully');
-        resolve(this.db);
-      };
-
-      request.onupgradeneeded = (event) => {
-        const db = event.target.result;
-        
-        // Create stores
-        this.stores.forEach(storeConfig => {
-          const { name, keyPath, indexes = [], autoIncrement = false } = storeConfig;
-          
-          // Delete store if it exists
-          if (db.objectStoreNames.contains(name)) {
-            db.deleteObjectStore(name);
+        request.onerror = () => {
+          // Suppress repeated errors after first failure
+          if (!this.isIndexedDbPermanentlyUnavailable) {
+            console.error('IndexedDB initialization failed:', request.error);
           }
-          
-          // Create new store
-          const store = db.createObjectStore(name, { 
-            keyPath: keyPath || 'id', 
-            autoIncrement: autoIncrement 
+          // Mark IndexedDB as permanently unavailable to prevent repeated attempts
+          this.isIndexedDbPermanentlyUnavailable = true;
+          reject(new Error(`Failed to initialize IndexedDB: ${request.error}`));
+        };
+
+        request.onsuccess = () => {
+          this.db = request.result;
+          this.isInitialized = true;
+          // Reset the permanently unavailable flag if initialization succeeds
+          this.isIndexedDbPermanentlyUnavailable = false;
+          console.log('IndexedDB initialized successfully');
+          resolve(this.db);
+        };
+
+        request.onupgradeneeded = (event) => {
+          const db = event.target.result;
+
+          // Create stores
+          this.stores.forEach(storeConfig => {
+            const { name, keyPath, indexes = [], autoIncrement = false } = storeConfig;
+
+            // Delete store if it exists
+            if (db.objectStoreNames.contains(name)) {
+              db.deleteObjectStore(name);
+            }
+
+            // Create new store
+            const store = db.createObjectStore(name, {
+              keyPath: keyPath || 'id',
+              autoIncrement: autoIncrement
+            });
+
+            // Create indexes
+            indexes.forEach(index => {
+              const { name, keyPath, options = {} } = index;
+              store.createIndex(name, keyPath, options);
+            });
           });
-          
-          // Create indexes
-          indexes.forEach(index => {
-            const { name, keyPath, options = {} } = index;
-            store.createIndex(name, keyPath, options);
-          });
-        });
-        
-        console.log('IndexedDB schema upgraded');
-      };
-    });
+
+          console.log('IndexedDB schema upgraded');
+        };
+      });
+    }
+
+    return this._initPromise;
   }
 
   /**
@@ -111,37 +130,55 @@ export class IndexedDbManager {
       return Promise.resolve(null);
     }
 
-    if (!this.isInitialized) {
-      await this.init();
+    // Return null if IndexedDB is permanently unavailable
+    if (this.isIndexedDbPermanentlyUnavailable) {
+      return Promise.resolve(null);
     }
 
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction([storeName], 'readonly');
-      const store = transaction.objectStore(storeName);
-      const request = store.get(key);
+    try {
+      if (!this.isInitialized) {
+        await this.init();
 
-      request.onsuccess = () => {
-        const result = request.result;
-        
-        // Check if item exists and hasn't expired
-        if (result) {
-          if (result.expires && result.expires < Date.now()) {
-            // Item expired, delete it
-            this.delete(storeName, key);
-            resolve(null);
-          } else {
-            resolve(result.value);
-          }
-        } else {
-          resolve(null);
+        // If initialization failed and marked as permanently unavailable, return null
+        if (this.isIndexedDbPermanentlyUnavailable) {
+          return Promise.resolve(null);
         }
-      };
+      }
 
-      request.onerror = () => {
-        console.error(`Failed to get item from ${storeName}:`, request.error);
-        reject(new Error(`Failed to get item from ${storeName}: ${request.error}`));
-      };
-    });
+      return new Promise((resolve, reject) => {
+        const transaction = this.db.transaction([storeName], 'readonly');
+        const store = transaction.objectStore(storeName);
+        const request = store.get(key);
+
+        request.onsuccess = () => {
+          const result = request.result;
+
+          // Check if item exists and hasn't expired
+          if (result) {
+            if (result.expires && result.expires < Date.now()) {
+              // Item expired, delete it
+              this.delete(storeName, key);
+              resolve(null);
+            } else {
+              resolve(result.value);
+            }
+          } else {
+            resolve(null);
+          }
+        };
+
+        request.onerror = () => {
+          // Mark unavailable on transaction errors too
+          this.isIndexedDbPermanentlyUnavailable = true;
+          console.error(`Failed to get item from ${storeName}:`, request.error);
+          reject(new Error(`Failed to get item from ${storeName}: ${request.error}`));
+        };
+      });
+    } catch (error) {
+      // Catch init failure and mark unavailable
+      this.isIndexedDbPermanentlyUnavailable = true;
+      return Promise.resolve(null);
+    }
   }
 
   /**
@@ -158,35 +195,53 @@ export class IndexedDbManager {
       return Promise.resolve();
     }
 
-    if (!this.isInitialized) {
-      await this.init();
+    // Return early if IndexedDB is permanently unavailable
+    if (this.isIndexedDbPermanentlyUnavailable) {
+      return Promise.resolve();
     }
 
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction([storeName], 'readwrite');
-      const store = transaction.objectStore(storeName);
-      
-      // Serialize the value to ensure it's compatible with IndexedDB
-      const serializedValue = serializeData(value);
-      
-      const item = {
-        id: key,
-        value: serializedValue,
-        createdAt: Date.now(),
-        expires: ttl ? Date.now() + ttl : null
-      };
+    try {
+      if (!this.isInitialized) {
+        await this.init();
 
-      const request = store.put(item);
+        // If initialization failed and marked as permanently unavailable, return
+        if (this.isIndexedDbPermanentlyUnavailable) {
+          return Promise.resolve();
+        }
+      }
 
-      request.onsuccess = () => {
-        resolve();
-      };
+      return new Promise((resolve, reject) => {
+        const transaction = this.db.transaction([storeName], 'readwrite');
+        const store = transaction.objectStore(storeName);
 
-      request.onerror = () => {
-        console.error(`Failed to set item in ${storeName}:`, request.error);
-        reject(new Error(`Failed to set item in ${storeName}: ${request.error}`));
-      };
-    });
+        // Serialize the value to ensure it's compatible with IndexedDB
+        const serializedValue = serializeData(value);
+
+        const item = {
+          id: key,
+          value: serializedValue,
+          createdAt: Date.now(),
+          expires: ttl ? Date.now() + ttl : null
+        };
+
+        const request = store.put(item);
+
+        request.onsuccess = () => {
+          resolve();
+        };
+
+        request.onerror = () => {
+          // Mark unavailable on transaction errors too
+          this.isIndexedDbPermanentlyUnavailable = true;
+          console.error(`Failed to set item in ${storeName}:`, request.error);
+          reject(new Error(`Failed to set item in ${storeName}: ${request.error}`));
+        };
+      });
+    } catch (error) {
+      // Catch init failure and mark unavailable
+      this.isIndexedDbPermanentlyUnavailable = true;
+      return Promise.resolve();
+    }
   }
 
   /**
@@ -201,24 +256,42 @@ export class IndexedDbManager {
       return Promise.resolve();
     }
 
-    if (!this.isInitialized) {
-      await this.init();
+    // Return early if IndexedDB is permanently unavailable
+    if (this.isIndexedDbPermanentlyUnavailable) {
+      return Promise.resolve();
     }
 
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction([storeName], 'readwrite');
-      const store = transaction.objectStore(storeName);
-      const request = store.delete(key);
+    try {
+      if (!this.isInitialized) {
+        await this.init();
 
-      request.onsuccess = () => {
-        resolve();
-      };
+        // If initialization failed and marked as permanently unavailable, return
+        if (this.isIndexedDbPermanentlyUnavailable) {
+          return Promise.resolve();
+        }
+      }
 
-      request.onerror = () => {
-        console.error(`Failed to delete item from ${storeName}:`, request.error);
-        reject(new Error(`Failed to delete item from ${storeName}: ${request.error}`));
-      };
-    });
+      return new Promise((resolve, reject) => {
+        const transaction = this.db.transaction([storeName], 'readwrite');
+        const store = transaction.objectStore(storeName);
+        const request = store.delete(key);
+
+        request.onsuccess = () => {
+          resolve();
+        };
+
+        request.onerror = () => {
+          // Mark unavailable on transaction errors too
+          this.isIndexedDbPermanentlyUnavailable = true;
+          console.error(`Failed to delete item from ${storeName}:`, request.error);
+          reject(new Error(`Failed to delete item from ${storeName}: ${request.error}`));
+        };
+      });
+    } catch (error) {
+      // Catch init failure and mark unavailable
+      this.isIndexedDbPermanentlyUnavailable = true;
+      return Promise.resolve();
+    }
   }
 
   /**
@@ -232,24 +305,42 @@ export class IndexedDbManager {
       return Promise.resolve();
     }
 
-    if (!this.isInitialized) {
-      await this.init();
+    // Return early if IndexedDB is permanently unavailable
+    if (this.isIndexedDbPermanentlyUnavailable) {
+      return Promise.resolve();
     }
 
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction([storeName], 'readwrite');
-      const store = transaction.objectStore(storeName);
-      const request = store.clear();
+    try {
+      if (!this.isInitialized) {
+        await this.init();
 
-      request.onsuccess = () => {
-        resolve();
-      };
+        // If initialization failed and marked as permanently unavailable, return
+        if (this.isIndexedDbPermanentlyUnavailable) {
+          return Promise.resolve();
+        }
+      }
 
-      request.onerror = () => {
-        console.error(`Failed to clear ${storeName}:`, request.error);
-        reject(new Error(`Failed to clear ${storeName}: ${request.error}`));
-      };
-    });
+      return new Promise((resolve, reject) => {
+        const transaction = this.db.transaction([storeName], 'readwrite');
+        const store = transaction.objectStore(storeName);
+        const request = store.clear();
+
+        request.onsuccess = () => {
+          resolve();
+        };
+
+        request.onerror = () => {
+          // Mark unavailable on transaction errors too
+          this.isIndexedDbPermanentlyUnavailable = true;
+          console.error(`Failed to clear ${storeName}:`, request.error);
+          reject(new Error(`Failed to clear ${storeName}: ${request.error}`));
+        };
+      });
+    } catch (error) {
+      // Catch init failure and mark unavailable
+      this.isIndexedDbPermanentlyUnavailable = true;
+      return Promise.resolve();
+    }
   }
 
   /**
@@ -263,37 +354,49 @@ export class IndexedDbManager {
       return Promise.resolve([]);
     }
 
-    if (!this.isInitialized) {
-      await this.init();
+    try {
+      if (!this.isInitialized) {
+        await this.init();
+      }
+
+      if (this.isIndexedDbPermanentlyUnavailable) {
+        return Promise.resolve([]);
+      }
+
+      return new Promise((resolve, reject) => {
+        const transaction = this.db.transaction([storeName], 'readonly');
+        const store = transaction.objectStore(storeName);
+        const request = store.getAll();
+
+        request.onsuccess = () => {
+          const results = request.result || [];
+          const validResults = [];
+
+          // Filter out expired items
+          results.forEach(item => {
+            if (item.expires && item.expires < Date.now()) {
+              // Item expired, delete it
+              this.delete(storeName, item.id);
+            } else {
+              validResults.push(item.value);
+            }
+          });
+
+          resolve(validResults);
+        };
+
+        request.onerror = () => {
+          // Mark unavailable on transaction errors too
+          this.isIndexedDbPermanentlyUnavailable = true;
+          console.error(`Failed to get all items from ${storeName}:`, request.error);
+          reject(new Error(`Failed to get all items from ${storeName}: ${request.error}`));
+        };
+      });
+    } catch (error) {
+      // Catch init failure and mark unavailable
+      this.isIndexedDbPermanentlyUnavailable = true;
+      return Promise.resolve([]);
     }
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction([storeName], 'readonly');
-      const store = transaction.objectStore(storeName);
-      const request = store.getAll();
-
-      request.onsuccess = () => {
-        const results = request.result || [];
-        const validResults = [];
-        
-        // Filter out expired items
-        results.forEach(item => {
-          if (item.expires && item.expires < Date.now()) {
-            // Item expired, delete it
-            this.delete(storeName, item.id);
-          } else {
-            validResults.push(item.value);
-          }
-        });
-        
-        resolve(validResults);
-      };
-
-      request.onerror = () => {
-        console.error(`Failed to get all items from ${storeName}:`, request.error);
-        reject(new Error(`Failed to get all items from ${storeName}: ${request.error}`));
-      };
-    });
   }
 
   /**
@@ -307,46 +410,58 @@ export class IndexedDbManager {
       return Promise.resolve(0);
     }
 
-    if (!this.isInitialized) {
-      await this.init();
-    }
+    try {
+      if (!this.isInitialized) {
+        await this.init();
+      }
 
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction([storeName], 'readwrite');
-      const store = transaction.objectStore(storeName);
-      const request = store.getAll();
-      let deletedCount = 0;
+      if (this.isIndexedDbPermanentlyUnavailable) {
+        return Promise.resolve(0);
+      }
 
-      request.onsuccess = () => {
-        const results = request.result || [];
-        const expiredKeys = [];
-        
-        // Find expired items
-        results.forEach(item => {
-          if (item.expires && item.expires < Date.now()) {
-            expiredKeys.push(item.id);
-          }
-        });
-        
-        // Delete expired items
-        if (expiredKeys.length > 0) {
-          const deleteTransaction = this.db.transaction([storeName], 'readwrite');
-          const deleteStore = deleteTransaction.objectStore(storeName);
-          
-          expiredKeys.forEach(key => {
-            deleteStore.delete(key);
-            deletedCount++;
+      return new Promise((resolve, reject) => {
+        const transaction = this.db.transaction([storeName], 'readwrite');
+        const store = transaction.objectStore(storeName);
+        const request = store.getAll();
+        let deletedCount = 0;
+
+        request.onsuccess = () => {
+          const results = request.result || [];
+          const expiredKeys = [];
+
+          // Find expired items
+          results.forEach(item => {
+            if (item.expires && item.expires < Date.now()) {
+              expiredKeys.push(item.id);
+            }
           });
-        }
-        
-        resolve(deletedCount);
-      };
 
-      request.onerror = () => {
-        console.error(`Failed to check expired items in ${storeName}:`, request.error);
-        reject(new Error(`Failed to check expired items in ${storeName}: ${request.error}`));
-      };
-    });
+          // Delete expired items
+          if (expiredKeys.length > 0) {
+            const deleteTransaction = this.db.transaction([storeName], 'readwrite');
+            const deleteStore = deleteTransaction.objectStore(storeName);
+
+            expiredKeys.forEach(key => {
+              deleteStore.delete(key);
+              deletedCount++;
+            });
+          }
+
+          resolve(deletedCount);
+        };
+
+        request.onerror = () => {
+          // Mark unavailable on transaction errors too
+          this.isIndexedDbPermanentlyUnavailable = true;
+          console.error(`Failed to check expired items in ${storeName}:`, request.error);
+          reject(new Error(`Failed to check expired items in ${storeName}: ${request.error}`));
+        };
+      });
+    } catch (error) {
+      // Catch init failure and mark unavailable
+      this.isIndexedDbPermanentlyUnavailable = true;
+      return Promise.resolve(0);
+    }
   }
 
   /**
@@ -359,28 +474,380 @@ export class IndexedDbManager {
       return Promise.resolve({});
     }
 
-    if (!this.isInitialized) {
-      await this.init();
+    try {
+      if (!this.isInitialized) {
+        await this.init();
+      }
+
+      if (this.isIndexedDbPermanentlyUnavailable) {
+        return Promise.resolve({});
+      }
+
+      const stats = {};
+
+      for (const storeName of this.db.objectStoreNames) {
+        const transaction = this.db.transaction([storeName], 'readonly');
+        const store = transaction.objectStore(storeName);
+        const countRequest = store.count();
+
+        await new Promise(resolve => {
+          countRequest.onsuccess = () => {
+            stats[storeName] = {
+              count: countRequest.result
+            };
+            resolve();
+          };
+        });
+      }
+
+      return stats;
+    } catch (error) {
+      // Catch init failure and mark unavailable
+      this.isIndexedDbPermanentlyUnavailable = true;
+      return Promise.resolve({});
+    }
+  }
+
+  /**
+   * البحث باستخدام فهرس معين
+   * @param {string} storeName - اسم المخزن
+   * @param {string} indexName - اسم الفهرس
+   * @param {any} value - القيمة المراد البحث عنها
+   * @returns {Promise<Array>} النتائج المطابقة
+   */
+  async searchByIndex(storeName, indexName, value) {
+    // Return early if not in browser environment
+    if (!this.isBrowserEnvironment) {
+      return Promise.resolve([]);
     }
 
-    const stats = {};
-    
-    for (const storeName of this.db.objectStoreNames) {
-      const transaction = this.db.transaction([storeName], 'readonly');
-      const store = transaction.objectStore(storeName);
-      const countRequest = store.count();
-      
-      await new Promise(resolve => {
-        countRequest.onsuccess = () => {
-          stats[storeName] = {
-            count: countRequest.result
-          };
-          resolve();
+    try {
+      if (!this.isInitialized) {
+        await this.init();
+      }
+
+      if (this.isIndexedDbPermanentlyUnavailable) {
+        return Promise.resolve([]);
+      }
+
+      return new Promise((resolve, reject) => {
+        const transaction = this.db.transaction([storeName], 'readonly');
+        const store = transaction.objectStore(storeName);
+        const index = store.index(indexName);
+        const request = index.getAll(value);
+
+        request.onsuccess = () => {
+          const results = request.result || [];
+          const validResults = [];
+
+          // Filter out expired items
+          results.forEach(item => {
+            if (item.expires && item.expires < Date.now()) {
+              // Item expired, delete it
+              this.delete(storeName, item.id);
+            } else {
+              validResults.push(item.value);
+            }
+          });
+
+          resolve(validResults);
+        };
+
+        request.onerror = () => {
+          // Mark unavailable on transaction errors too
+          this.isIndexedDbPermanentlyUnavailable = true;
+          console.error(`Failed to search by index in ${storeName}:`, request.error);
+          reject(new Error(`Failed to search by index in ${storeName}: ${request.error}`));
         };
       });
+    } catch (error) {
+      // Catch init failure and mark unavailable
+      this.isIndexedDbPermanentlyUnavailable = true;
+      return Promise.resolve([]);
     }
-    
-    return stats;
+  }
+
+  /**
+   * البحث بنطاق معين في فهرس
+   * @param {string} storeName - اسم المخزن
+   * @param {string} indexName - اسم الفهرس
+   * @param {any} lowerBound - الحد الأدنى
+   * @param {any} upperBound - الحد الأقصى
+   * @param {boolean} lowerOpen - هل الحد الأدنى مفتوح
+   * @param {boolean} upperOpen - هل الحد الأقصى مفتوح
+   * @returns {Promise<Array>} النتائج المطابقة
+   */
+  async searchByIndexRange(storeName, indexName, lowerBound, upperBound, lowerOpen = false, upperOpen = false) {
+    // Return early if not in browser environment
+    if (!this.isBrowserEnvironment) {
+      return Promise.resolve([]);
+    }
+
+    try {
+      if (!this.isInitialized) {
+        await this.init();
+      }
+
+      if (this.isIndexedDbPermanentlyUnavailable) {
+        return Promise.resolve([]);
+      }
+
+      return new Promise((resolve, reject) => {
+        const transaction = this.db.transaction([storeName], 'readonly');
+        const store = transaction.objectStore(storeName);
+        const index = store.index(indexName);
+        const range = IDBKeyRange.bound(lowerBound, upperBound, lowerOpen, upperOpen);
+        const request = index.getAll(range);
+
+        request.onsuccess = () => {
+          const results = request.result || [];
+          const validResults = [];
+
+          // Filter out expired items
+          results.forEach(item => {
+            if (item.expires && item.expires < Date.now()) {
+              // Item expired, delete it
+              this.delete(storeName, item.id);
+            } else {
+              validResults.push(item.value);
+            }
+          });
+
+          resolve(validResults);
+        };
+
+        request.onerror = () => {
+          // Mark unavailable on transaction errors too
+          this.isIndexedDbPermanentlyUnavailable = true;
+          console.error(`Failed to search by index range in ${storeName}:`, request.error);
+          reject(new Error(`Failed to search by index range in ${storeName}: ${request.error}`));
+        };
+      });
+    } catch (error) {
+      // Catch init failure and mark unavailable
+      this.isIndexedDbPermanentlyUnavailable = true;
+      return Promise.resolve([]);
+    }
+  }
+
+  /**
+   * القراءة بالدفعات مع معالجة كل دفعة
+   * @param {string} storeName - اسم المخزن
+   * @param {number} batchSize - حجم الدفعة
+   * @param {Function} callback - دالة معالجة كل دفعة
+   * @param {IDBKeyRange} keyRange - نطاق المفاتيح (اختياري)
+   * @returns {Promise<number>} عدد العناصر المعالجة
+   */
+  async getBatchedData(storeName, batchSize = 100, callback, keyRange = null) {
+    // Return early if not in browser environment
+    if (!this.isBrowserEnvironment) {
+      return Promise.resolve(0);
+    }
+
+    try {
+      if (!this.isInitialized) {
+        await this.init();
+      }
+
+      if (this.isIndexedDbPermanentlyUnavailable) {
+        return Promise.resolve(0);
+      }
+
+      return new Promise((resolve, reject) => {
+        const transaction = this.db.transaction([storeName], 'readonly');
+        const store = transaction.objectStore(storeName);
+        const request = store.openCursor(keyRange);
+
+        let batch = [];
+        let count = 0;
+        let totalProcessed = 0;
+
+        request.onsuccess = async (event) => {
+          const cursor = event.target.result;
+
+          if (cursor) {
+            const item = cursor.value;
+
+            // Check if item is expired
+            if (item.expires && item.expires < Date.now()) {
+              // Skip expired items
+              cursor.continue();
+              return;
+            }
+
+            batch.push(item.value);
+            count++;
+
+            // Process batch when it reaches the batch size
+            if (count >= batchSize) {
+              try {
+                await callback(batch, totalProcessed, totalProcessed + batch.length);
+                totalProcessed += batch.length;
+                batch = [];
+                count = 0;
+              } catch (error) {
+                console.error('Error processing batch:', error);
+                reject(error);
+                return;
+              }
+            }
+
+            cursor.continue();
+          } else {
+            // Process remaining items in the last batch
+            if (batch.length > 0) {
+              try {
+                await callback(batch, totalProcessed, totalProcessed + batch.length);
+                totalProcessed += batch.length;
+              } catch (error) {
+                console.error('Error processing final batch:', error);
+                reject(error);
+                return;
+              }
+            }
+
+            resolve(totalProcessed);
+          }
+        };
+
+        request.onerror = () => {
+          // Mark unavailable on transaction errors too
+          this.isIndexedDbPermanentlyUnavailable = true;
+          console.error(`Failed to get batched data from ${storeName}:`, request.error);
+          reject(new Error(`Failed to get batched data from ${storeName}: ${request.error}`));
+        };
+      });
+    } catch (error) {
+      // Catch init failure and mark unavailable
+      this.isIndexedDbPermanentlyUnavailable = true;
+      return Promise.resolve(0);
+    }
+  }
+
+  /**
+   * عد العناصر في مخزن معين
+   * @param {string} storeName - اسم المخزن
+   * @param {IDBKeyRange} keyRange - نطاق المفاتيح (اختياري)
+   * @returns {Promise<number>} عدد العناصر
+   */
+  async count(storeName, keyRange = null) {
+    // Return early if not in browser environment
+    if (!this.isBrowserEnvironment) {
+      return Promise.resolve(0);
+    }
+
+    try {
+      if (!this.isInitialized) {
+        await this.init();
+      }
+
+      if (this.isIndexedDbPermanentlyUnavailable) {
+        return Promise.resolve(0);
+      }
+
+      return new Promise((resolve, reject) => {
+        const transaction = this.db.transaction([storeName], 'readonly');
+        const store = transaction.objectStore(storeName);
+        const request = store.count(keyRange);
+
+        request.onsuccess = () => {
+          resolve(request.result);
+        };
+
+        request.onerror = () => {
+          // Mark unavailable on transaction errors too
+          this.isIndexedDbPermanentlyUnavailable = true;
+          console.error(`Failed to count items in ${storeName}:`, request.error);
+          reject(new Error(`Failed to count items in ${storeName}: ${request.error}`));
+        };
+      });
+    } catch (error) {
+      // Catch init failure and mark unavailable
+      this.isIndexedDbPermanentlyUnavailable = true;
+      return Promise.resolve(0);
+    }
+  }
+
+  /**
+   * الحصول على عدة عناصر بمفاتيح محددة
+   * @param {string} storeName - اسم المخزن
+   * @param {Array} keys - مصفوفة المفاتيح
+   * @returns {Promise<Array>} العناصر المطابقة
+   */
+  async getMultiple(storeName, keys) {
+    // Return early if not in browser environment
+    if (!this.isBrowserEnvironment) {
+      return Promise.resolve([]);
+    }
+
+    try {
+      if (!this.isInitialized) {
+        await this.init();
+      }
+
+      if (this.isIndexedDbPermanentlyUnavailable) {
+        return Promise.resolve([]);
+      }
+
+      const results = [];
+
+      for (const key of keys) {
+        try {
+          const value = await this.get(storeName, key);
+          if (value !== null) {
+            results.push(value);
+          }
+        } catch (error) {
+          console.warn(`Failed to get item with key ${key}:`, error);
+        }
+      }
+
+      return results;
+    } catch (error) {
+      // Catch init failure and mark unavailable
+      this.isIndexedDbPermanentlyUnavailable = true;
+      return Promise.resolve([]);
+    }
+  }
+
+  /**
+   * حفظ عدة عناصر دفعة واحدة
+   * @param {string} storeName - اسم المخزن
+   * @param {Array} items - مصفوفة العناصر [{key, value, ttl}]
+   * @returns {Promise<number>} عدد العناصر المحفوظة
+   */
+  async setMultiple(storeName, items) {
+    // Return early if not in browser environment
+    if (!this.isBrowserEnvironment) {
+      return Promise.resolve(0);
+    }
+
+    try {
+      if (!this.isInitialized) {
+        await this.init();
+      }
+
+      if (this.isIndexedDbPermanentlyUnavailable) {
+        return Promise.resolve(0);
+      }
+
+      let savedCount = 0;
+
+      for (const item of items) {
+        try {
+          await this.set(storeName, item.key, item.value, item.ttl || null);
+          savedCount++;
+        } catch (error) {
+          console.warn(`Failed to save item with key ${item.key}:`, error);
+        }
+      }
+
+      return savedCount;
+    } catch (error) {
+      // Catch init failure and mark unavailable
+      this.isIndexedDbPermanentlyUnavailable = true;
+      return Promise.resolve(0);
+    }
   }
 }
 
@@ -433,8 +900,10 @@ export class CacheManager {
   constructor(indexedDbManager = defaultIndexedDbManager) {
     this.indexedDbManager = indexedDbManager;
     this.isBrowserEnvironment = typeof window !== 'undefined';
-    this.isIndexedDbSupported = this.isBrowserEnvironment && typeof indexedDB !== 'undefined';
+    this.isElectron = this.isBrowserEnvironment && window.process && window.process.versions && window.process.versions.electron;
+    this.isIndexedDbSupported = this.isBrowserEnvironment && typeof indexedDB !== 'undefined' && !this.isElectron;
     this.isLocalStorageSupported = this.isBrowserEnvironment && typeof localStorage !== 'undefined';
+    this.fallbackActive = false;
   }
 
   /**
@@ -446,12 +915,20 @@ export class CacheManager {
   async get(storeName, key) {
     if (this.isIndexedDbSupported) {
       try {
-        return await this.indexedDbManager.get(storeName, key);
+        // Check if IndexedDB is permanently unavailable before attempting to use it
+        if (this.indexedDbManager.isIndexedDbPermanentlyUnavailable) {
+          // Skip IndexedDB and go directly to localStorage
+        } else {
+          return await this.indexedDbManager.get(storeName, key);
+        }
       } catch (error) {
-        console.warn('IndexedDB get failed, falling back to localStorage:', error);
+        if (!this.fallbackActive) {
+          console.warn('IndexedDB get failed, falling back to localStorage:', error);
+          this.fallbackActive = true;
+        }
       }
     }
-    
+
     // Fallback to localStorage if available
     if (this.isLocalStorageSupported) {
       try {
@@ -465,10 +942,13 @@ export class CacheManager {
           return parsed.value;
         }
       } catch (error) {
-        console.warn('localStorage get failed:', error);
+        if (!this.fallbackActive) {
+          console.warn('localStorage get failed:', error);
+          this.fallbackActive = true;
+        }
       }
     }
-    
+
     return null;
   }
 
@@ -483,19 +963,25 @@ export class CacheManager {
   async set(storeName, key, value, ttl = null) {
     if (this.isIndexedDbSupported) {
       try {
-        await this.indexedDbManager.set(storeName, key, value, ttl);
-        return;
+        // Check if IndexedDB is permanently unavailable before attempting to use it
+        if (!this.indexedDbManager.isIndexedDbPermanentlyUnavailable) {
+          await this.indexedDbManager.set(storeName, key, value, ttl);
+          return;
+        }
       } catch (error) {
-        console.warn('IndexedDB set failed, falling back to localStorage:', error);
+        if (!this.fallbackActive) {
+          console.warn('IndexedDB set failed, falling back to localStorage:', error);
+          this.fallbackActive = true;
+        }
       }
     }
-    
+
     // Fallback to localStorage if available
     if (this.isLocalStorageSupported) {
       try {
         // Serialize the value to ensure it's compatible with localStorage
         const serializedValue = serializeData(value);
-        
+
         const item = {
           value: serializedValue,
           createdAt: Date.now(),
@@ -503,7 +989,10 @@ export class CacheManager {
         };
         localStorage.setItem(`${storeName}_${key}`, JSON.stringify(item));
       } catch (error) {
-        console.warn('localStorage set failed:', error);
+        if (!this.fallbackActive) {
+          console.warn('localStorage set failed:', error);
+          this.fallbackActive = true;
+        }
       }
     }
   }
@@ -517,19 +1006,28 @@ export class CacheManager {
   async delete(storeName, key) {
     if (this.isIndexedDbSupported) {
       try {
-        await this.indexedDbManager.delete(storeName, key);
-        return;
+        // Check if IndexedDB is permanently unavailable before attempting to use it
+        if (!this.indexedDbManager.isIndexedDbPermanentlyUnavailable) {
+          await this.indexedDbManager.delete(storeName, key);
+          return;
+        }
       } catch (error) {
-        console.warn('IndexedDB delete failed, falling back to localStorage:', error);
+        if (!this.fallbackActive) {
+          console.warn('IndexedDB delete failed, falling back to localStorage:', error);
+          this.fallbackActive = true;
+        }
       }
     }
-    
+
     // Fallback to localStorage if available
     if (this.isLocalStorageSupported) {
       try {
         localStorage.removeItem(`${storeName}_${key}`);
       } catch (error) {
-        console.warn('localStorage delete failed:', error);
+        if (!this.fallbackActive) {
+          console.warn('localStorage delete failed:', error);
+          this.fallbackActive = true;
+        }
       }
     }
   }
@@ -542,13 +1040,19 @@ export class CacheManager {
   async clear(storeName) {
     if (this.isIndexedDbSupported) {
       try {
-        await this.indexedDbManager.clear(storeName);
-        return;
+        // Check if IndexedDB is permanently unavailable before attempting to use it
+        if (!this.indexedDbManager.isIndexedDbPermanentlyUnavailable) {
+          await this.indexedDbManager.clear(storeName);
+          return;
+        }
       } catch (error) {
-        console.warn('IndexedDB clear failed, falling back to localStorage:', error);
+        if (!this.fallbackActive) {
+          console.warn('IndexedDB clear failed, falling back to localStorage:', error);
+          this.fallbackActive = true;
+        }
       }
     }
-    
+
     // Fallback to localStorage if available
     if (this.isLocalStorageSupported) {
       try {
@@ -558,7 +1062,10 @@ export class CacheManager {
           }
         });
       } catch (error) {
-        console.warn('localStorage clear failed:', error);
+        if (!this.fallbackActive) {
+          console.warn('localStorage clear failed:', error);
+          this.fallbackActive = true;
+        }
       }
     }
   }

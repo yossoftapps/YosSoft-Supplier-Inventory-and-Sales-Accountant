@@ -5,7 +5,7 @@
 
 /* Body padding to account for fixed navbar */
 body {
-  padding-top: 60px; /* Adjust based on navbar height */
+  margin: 0;
 }
 
 .header {
@@ -71,7 +71,7 @@ body {
     height: 24px;
     margin: 12px 16px 12px 0;
   }
-  
+
   .header-content h1 {
     font-size: 1.2rem;
   }
@@ -139,14 +139,15 @@ body {
 
 /* Fixed navigation bar */
 .fixed-navbar {
-  position: fixed;
-  top: 0;
-  z-index: 100;
-  background: white;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-  padding: 12px 0;
+  position: sticky;
+  top: 64px;
+  z-index: 99;
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(10px);
+  padding: 8px 16px;
   margin-bottom: 24px;
   width: 100%;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
 }
 
 /* Collapsible sections */

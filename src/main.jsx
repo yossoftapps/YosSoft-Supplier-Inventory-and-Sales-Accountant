@@ -4,6 +4,8 @@ import App from './App';
 import 'antd/dist/reset.css';
 import './index.css';
 import './i18n';
+import { DndProvider } from 'react-dnd';
+import { HTML5Backend } from 'react-dnd-html5-backend';
 
 // استيراد تحسينات بدء التشغيل
 import {
@@ -37,10 +39,16 @@ try {
   console.warn('⚠️ خطأ في تفعيل مدير الذاكرة:', error);
 }
 
+import { ThemeProvider } from './contexts/ThemeContext';
+
 // تحميل التطبيق
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <App />
+    <DndProvider backend={HTML5Backend}>
+      <ThemeProvider>
+        <App />
+      </ThemeProvider>
+    </DndProvider>
   </React.StrictMode>
 );
 

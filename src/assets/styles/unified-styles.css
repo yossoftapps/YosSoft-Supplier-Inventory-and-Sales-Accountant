@@ -1,9 +1,8 @@
-/* Unified Styles for Consistent UI Across All Pages - Modern Premium Edition */
+/* الأنماط الموحدة لواجهة مستخدم متناسقة عبر جميع الصفحات - الإصدار الحديث المميز */
 
-/* Color Palette & Design Tokens */
-/* Color Palette & Design Tokens */
+/* لوحة الألوان ورموز التصميم */
 :root {
-  /* Core Colors */
+  /* الألوان الأساسية */
   --primary-50: #eff6ff;
   --primary-100: #dbeafe;
   --primary-600: #2563eb;
@@ -16,34 +15,34 @@
   --neutral-700: #334155;
   --neutral-900: #0f172a;
 
-  /* Legacy Colors (Mapped to New System) */
+  /* الألوان القديمة (مربوطة بالنظام الجديد) */
   --primary-color: var(--primary-600);
   --primary-gradient: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
   --secondary-color: var(--success-500);
   --secondary-gradient: linear-gradient(135deg, #10b981 0%, #059669 100%);
   --accent-color: #8b5cf6;
 
-  /* Functional Colors */
+  /* الألوان الوظيفية */
   --success-color: var(--success-500);
   --warning-color: var(--warning-500);
   --danger-color: var(--error-500);
   --info-color: #06b6d4;
 
-  /* Backgrounds & Surfaces */
+  /* الخلفيات والأسطح */
   --background-page: var(--neutral-50);
   --background-glass: rgba(255, 255, 255, 0.7);
   --background-glass-hover: rgba(255, 255, 255, 0.85);
   --surface-card: #ffffff;
   --gradient-card: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
 
-  /* Typography */
+  /* الطباعة (Typography) */
   --text-primary: var(--neutral-900);
   --text-secondary: var(--neutral-700);
   --text-tertiary: #94a3b8;
   --font-primary: 'Cairo', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   --font-mono: 'Fira Code', monospace;
-  
-  /* Font Sizes */
+
+  /* أحجام الخطوط */
   --font-size-xs: 11px;
   --font-size-sm: 13px;
   --font-size-base: 14px;
@@ -52,15 +51,15 @@
   --font-size-xl: 20px;
   --font-size-2xl: 24px;
   --font-size-3xl: 32px;
-  
-  /* Font Weights */
+
+  /* أوزان الخطوط */
   --font-weight-normal: 400;
   --font-weight-medium: 500;
   --font-weight-semibold: 600;
   --font-weight-bold: 700;
   --font-weight-extrabold: 800;
 
-  /* Borders & Shadows */
+  /* الحدود والظلال */
   --border-color: rgba(226, 232, 240, 0.8);
   --glass-border: 1px solid rgba(255, 255, 255, 0.5);
   --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
@@ -69,13 +68,13 @@
   --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
   --shadow-glow: 0 0 15px rgba(37, 99, 235, 0.15);
 
-  /* Radius */
+  /* نصف القطر (Radius) */
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-lg: 16px;
   --radius-xl: 24px;
 
-  /* Spacing */
+  /* المسافات */
   --space-xs: 4px;
   --space-sm: 8px;
   --space-md: 16px;
@@ -83,7 +82,7 @@
   --space-xl: 32px;
 }
 
-/* Global Animations */
+/* الرسوم المتحركة العامة */
 @keyframes fadeIn {
   from {
     opacity: 0;
@@ -100,18 +99,46 @@
   animation: fadeIn 0.4s ease-out forwards;
 }
 
-/* Page Layout */
+/* تخطيط الصفحة */
 .unified-page-layout {
-  padding: 32px;
+  padding: 12px 20px;
   background-color: var(--background-page);
   min-height: 100vh;
   animation: fadeIn 0.5s ease-out;
+  position: relative;
+  z-index: 1;
 }
 
 .unified-page-header {
-  margin-bottom: 32px;
+  margin-bottom: 12px;
   position: relative;
+  background: white;
+  padding: 20px;
+  border-radius: 16px;
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border-color);
+  z-index: 15;
 }
+
+.unified-top-title-section {
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 16px;
+}
+
+.unified-pro-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.unified-nav-container {
+  flex: 1;
+  min-width: 300px;
+}
+
 
 .unified-page-title {
   margin: 0;
@@ -134,7 +161,7 @@
   font-weight: var(--font-weight-normal);
 }
 
-/* Action Bar */
+/* شريط الإجراءات */
 .unified-action-bar {
   display: flex;
   justify-content: space-between;
@@ -156,7 +183,7 @@
   align-items: center;
 }
 
-/* Glassmorphism Cards */
+/* بطاقات بتأثير الزجاج (Glassmorphism Cards) */
 .unified-card {
   background: var(--surface-card);
   margin-bottom: 24px;
@@ -209,28 +236,45 @@
   color: var(--text-primary);
 }
 
-/* Modern Tables */
+/* الجداول الحديثة */
 .unified-table {
-  margin-top: 24px;
   background: white;
   border-radius: var(--radius-md);
   overflow: hidden;
   box-shadow: var(--shadow-sm);
+  position: relative;
+  z-index: 3;
+}
+
+.unified-table .ant-table-container table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.unified-table-wrapper {
+  position: relative;
+  z-index: 3;
 }
 
 .unified-table .ant-table-thead>tr>th {
+  vertical-align: middle;
+  padding: 10px 12px;
   background: #f1f5f9;
   font-weight: 700;
   color: var(--text-primary);
   border-bottom: 2px solid var(--border-color);
-  padding: 16px;
+  text-align: inherit !important;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .unified-table .ant-table-tbody>tr>td {
-  padding: 16px;
+  padding: 8px 12px;
   color: var(--text-secondary);
   border-bottom: 1px solid var(--border-color);
   transition: background 0.2s;
+  text-align: inherit !important;
 }
 
 .unified-table .ant-table-tbody>tr:hover>td {
@@ -244,7 +288,7 @@
   font-size: var(--font-size-md);
 }
 
-/* Buttons */
+/* الأزرار */
 .unified-primary-button {
   background: var(--primary-gradient);
   border: none;
@@ -272,8 +316,9 @@
 
 .unified-primary-button:hover {
   transform: translateY(-1px);
-  box-shadow: 0 4px 8px rgba(37, 99, 235, 0.4);
-  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4);
+  background: var(--primary-gradient);
+  filter: brightness(1.1);
 }
 
 .unified-primary-button:hover::before {
@@ -312,10 +357,10 @@
 }
 
 .unified-secondary-button:hover {
-  border-color: var(--primary-color);
-  color: var(--primary-color);
-  background: #f8fafc;
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  border-color: var(--primary-600);
+  color: var(--primary-600);
+  background: var(--primary-50);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.05);
   transform: translateY(-1px);
 }
 
@@ -328,7 +373,7 @@
   box-shadow: var(--shadow-sm);
 }
 
-/* Dashboard Widget Cards override */
+/* تجاوزات بطاقات أدوات لوحة التحكم */
 .dashboard-widget-card {
   background: white;
   border-radius: var(--radius-lg);
@@ -358,17 +403,182 @@
   opacity: 1;
 }
 
-/* Filters */
+/* الفلاتر - شريط تحكم إبداعي */
 .unified-filter-bar {
-  margin-bottom: 32px;
+  margin-bottom: 12px;
   background: white !important;
-  box-shadow: var(--shadow-md) !important;
-  border: none !important;
-  margin-top: -10px;
-  /* Pull closer to action bar */
+  box-shadow: var(--shadow-sm) !important;
+  border: 1px solid var(--border-color) !important;
+  padding: 12px 20px !important;
+  border-radius: 12px !important;
+  position: relative;
+  z-index: 1;
 }
 
-/* Inputs & Selects */
+/* محتوى الصفحة */
+.unified-page-content {
+  overflow-x: auto;
+  overflow-y: visible;
+  position: relative;
+  z-index: 2;
+}
+
+/* الصف الخامس المدمج: تبويبات التنقل وأدوات الترحيل */
+.unified-row-5-container {
+  padding: 4px 0;
+  margin-bottom: 8px;
+}
+
+/* رأس الجدول المدمج وصف الترقيم */
+.unified-table {
+  background: white;
+  border-radius: 12px;
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border-color);
+}
+
+.unified-table .ant-table-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #f8fafc;
+  padding: 12px 20px !important;
+  border-bottom: 1px solid var(--border-color);
+  border-radius: 12px 12px 0 0;
+}
+
+/* Align table headers with the content in columns below */
+.unified-table .ant-table-thead>tr>th {
+  text-align: inherit;
+  vertical-align: middle;
+  padding: 10px 12px;
+  background: #f1f5f9;
+  font-weight: 700;
+  color: var(--text-primary);
+  border-bottom: 2px solid var(--border-color);
+}
+
+/* Ensure proper alignment inheritance for resizable headers */
+.unified-table .ant-table-thead>tr>th .ant-table-header-column {
+  text-align: inherit;
+}
+
+/* Ensure alignment consistency between headers and cells */
+.unified-table .ant-table-thead>tr>th,
+.unified-table .ant-table-tbody>tr>td {
+  text-align: inherit;
+}
+
+/* Specific alignment classes for table headers */
+.unified-table .ant-table-thead>tr>th.ant-table-column-has-sorters {
+  text-align: inherit;
+}
+
+/* Ensure alignment classes are properly applied */
+.unified-table .ant-table-thead>tr>th.ant-table-cell-center,
+.unified-table .ant-table-tbody>tr>td.ant-table-cell-center {
+  text-align: center;
+}
+.unified-table .ant-table-thead>tr>th.ant-table-cell-left,
+.unified-table .ant-table-tbody>tr>td.ant-table-cell-left {
+  text-align: left;
+}
+.unified-table .ant-table-thead>tr>th.ant-table-cell-right,
+.unified-table .ant-table-tbody>tr>td.ant-table-cell-right {
+  text-align: right;
+}
+
+/* Ensure alignment is applied even when combined with other classes */
+.unified-table .ant-table-thead>tr>th.ant-table-column-has-sorters.ant-table-cell-center {
+  text-align: center;
+}
+.unified-table .ant-table-thead>tr>th.ant-table-column-has-sorters.ant-table-cell-left {
+  text-align: left;
+}
+.unified-table .ant-table-thead>tr>th.ant-table-column-has-sorters.ant-table-cell-right {
+  text-align: right;
+}
+
+/* Proper RTL alignment for Arabic text */
+html[dir='rtl'] .unified-table .ant-table-thead>tr>th,
+html[dir='rtl'] .unified-table .ant-table-tbody>tr>td {
+  text-align: inherit;
+}
+
+.unified-table .ant-table-pagination-top {
+  margin: 16px 0 !important;
+}
+
+.unified-table .ant-table-pagination-top .ant-pagination-total-text {
+  display: none;
+  /* إخفاء العدد المتكرر */
+}
+
+/* تفسير التقرير / وسيلة الإيضاح */
+.unified-report-interpretation {
+  margin-top: 32px;
+  padding: 20px;
+  background: #f1f5f9;
+  border-radius: 12px;
+  border-right: 4px solid var(--primary-600);
+  font-size: 13px;
+  color: #475569;
+  line-height: 1.8;
+}
+
+/* أشرطة التمرير المتزامنة */
+.synchronized-scrollbar {
+  overflow-x: auto;
+  overflow-y: hidden;
+  width: 100%;
+  background: #f8fafc;
+  border-left: 1px solid var(--border-color);
+  border-right: 1px solid var(--border-color);
+  position: relative;
+  z-index: 1;
+}
+
+.synchronized-scrollbar-top {
+  border-radius: 12px 12px 0 0;
+  border-top: 1px solid var(--border-color);
+  margin-bottom: -1px;
+  /* تداخل مع رأس الجدول */
+  position: relative;
+  height: 14px;
+  display: block;
+  z-index: 2;
+}
+
+.synchronized-scrollbar-bottom {
+  border-bottom: 1px solid var(--border-color);
+  border-radius: 0 0 12px 12px;
+  margin-top: -1px;
+  position: relative;
+  height: 14px;
+  display: block;
+  z-index: 2;
+}
+
+.synchronized-scrollbar-content {
+  height: 12px;
+  background: linear-gradient(to right, #cbd5e1 0%, #94a3b8 100%);
+  cursor: pointer;
+  border-radius: 6px;
+  margin: 0 10px;
+}
+
+/* إخفاء شريط تمرير الجدول الأصلي عند وجود أشرطة متزامنة */
+.unified-table .ant-table-body::-webkit-scrollbar,
+.unified-table .ant-table-content::-webkit-scrollbar {
+  display: none;
+}
+
+
+.unified-table-container {
+  position: relative;
+}
+
+/* حقول الإدخال والاختيار */
 .unified-input,
 .unified-select .ant-select-selector {
   border-radius: var(--radius-sm) !important;
@@ -385,9 +595,10 @@
   box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1) !important;
 }
 
-/* Tabs */
+/* التبويبات (Tabs) */
 .unified-tabs .ant-tabs-nav {
   margin-bottom: 24px;
+  position: relative;
 }
 
 .unified-tabs .ant-tabs-tab {
@@ -407,7 +618,7 @@
   font-weight: 600;
 }
 
-/* Responsive Design */
+/* التصميم المتجاوب */
 @media (max-width: 768px) {
   .unified-page-layout {
     padding: 16px;
@@ -426,13 +637,22 @@
   .unified-action-group>* {
     flex: 1;
   }
-
-  .unified-page-title {
-    font-size: 20px;
-  }
 }
 
-/* Custom Scrollbars */
+.unified-table-title {
+  font-size: 16px;
+  color: #334155;
+  font-weight: 600;
+  display: block;
+}
+
+.unified-actions-container {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* أشرطة تمرير مخصصة */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -451,7 +671,7 @@
   background: #94a3b8;
 }
 
-/* Loading Fallback */
+/* واجهة التحميل البديلة */
 .loading-fallback {
   display: flex;
   justify-content: center;
@@ -481,7 +701,7 @@
   text-align: center;
 }
 
-/* Fixed navigation bar override */
+/* تجاوز شريط التنقل الثابت */
 .fixed-navbar {
   background: rgba(255, 255, 255, 0.9);
   backdrop-filter: blur(10px);
@@ -489,9 +709,157 @@
   box-shadow: var(--shadow-sm);
 }
 
-/* Alerts updated */
+/* التنبيهات المحدثة */
 .unified-alert {
   border: none;
   box-shadow: var(--shadow-sm);
   border-radius: var(--radius-sm);
+}
+
+/* تنسيق عناصر التحكم المجزأة المميزة */
+.ant-radio-group {
+  background: #f1f5f9;
+  padding: 4px;
+  border-radius: 12px;
+  border: none;
+  position: relative;
+}
+
+.ant-radio-button-wrapper {
+  border: none !important;
+  background: transparent !important;
+  border-radius: 8px !important;
+  height: 36px !important;
+  line-height: 34px !important;
+  color: #64748b !important;
+  font-weight: 600 !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  margin: 0 2px;
+}
+
+.ant-radio-button-wrapper:not(:first-child)::before {
+  display: none !important;
+}
+
+.ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled) {
+  background: white !important;
+  color: #2563eb !important;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05) !important;
+}
+
+.ant-radio-button-wrapper:hover {
+  color: #2563eb !important;
+}
+
+/* Report Category Coloring */
+.category-basic {
+  --category-color: #2563eb;
+  --category-bg: #eff6ff;
+}
+
+.category-inventory {
+  --category-color: #059669;
+  --category-bg: #ecfdf5;
+}
+
+.category-financial {
+  --category-color: #d97706;
+  --category-bg: #fffbeb;
+}
+
+.category-risk {
+  --category-color: #dc2626;
+  --category-bg: #fef2f2;
+}
+
+.category-analytical {
+  --category-color: #7c3aed;
+  --category-bg: #f5f3ff;
+}
+
+/* Apply styling to Unified Page Header */
+.unified-page-header.category-basic {
+  border-top: 4px solid var(--category-color);
+  background-color: var(--category-bg);
+  border-left: 1px solid var(--category-color);
+  border-right: 1px solid var(--category-color);
+  border-bottom: 1px solid var(--category-color);
+}
+
+.unified-page-header.category-inventory {
+  border-top: 4px solid var(--category-color);
+  background-color: var(--category-bg);
+  border-left: 1px solid var(--category-color);
+  border-right: 1px solid var(--category-color);
+  border-bottom: 1px solid var(--category-color);
+}
+
+.unified-page-header.category-financial {
+  border-top: 4px solid var(--category-color);
+  background-color: var(--category-bg);
+  border-left: 1px solid var(--category-color);
+  border-right: 1px solid var(--category-color);
+  border-bottom: 1px solid var(--category-color);
+}
+
+.unified-page-header.category-risk {
+  border-top: 4px solid var(--category-color);
+  background-color: var(--category-bg);
+  border-left: 1px solid var(--category-color);
+  border-right: 1px solid var(--category-color);
+  border-bottom: 1px solid var(--category-color);
+}
+
+.unified-page-header.category-analytical {
+  border-top: 4px solid var(--category-color);
+  background-color: var(--category-bg);
+  border-left: 1px solid var(--category-color);
+  border-right: 1px solid var(--category-color);
+  border-bottom: 1px solid var(--category-color);
+}
+
+/* Sidebar Icon Colors */
+.sidebar-icon-basic {
+  color: #2563eb !important;
+}
+
+.sidebar-icon-inventory {
+  color: #059669 !important;
+}
+
+.sidebar-icon-financial {
+  color: #d97706 !important;
+}
+
+.sidebar-icon-risk {
+  color: #dc2626 !important;
+}
+
+.sidebar-icon-analytical {
+  color: #7c3aed !important;
+}
+
+.ant-menu-item:hover .sidebar-icon-basic,
+.ant-menu-item-selected .sidebar-icon-basic {
+  filter: brightness(1.2);
+}
+
+.ant-menu-item:hover .sidebar-icon-inventory,
+.ant-menu-item-selected .sidebar-icon-inventory {
+  filter: brightness(1.2);
+}
+
+.ant-menu-item:hover .sidebar-icon-financial,
+.ant-menu-item-selected .sidebar-icon-financial {
+  filter: brightness(1.2);
+}
+
+.ant-menu-item:hover .sidebar-icon-risk,
+.ant-menu-item-selected .sidebar-icon-risk {
+  filter: brightness(1.2);
+}
+
+.ant-menu-item:hover .sidebar-icon-analytical,
+.ant-menu-item-selected .sidebar-icon-analytical {
+  filter: brightness(1.2);
 }

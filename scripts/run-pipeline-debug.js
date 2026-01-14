@@ -73,7 +73,7 @@ async function main() {
 
     const netPurchasesResult = calculateNetPurchases(allPurchases, purchaseReturns, normalizedData.purchases[0]);
     const netSalesResult = calculateNetSales(allSales, salesReturns, normalizedData.sales[0]);
-    const physicalInventoryResult = processPhysicalInventory(normalizedData.physicalInventory);
+    const physicalInventoryResult = processPhysicalInventory(normalizedData.physicalInventory, normalizedData.purchases);
     const excessInventoryResult = calculateExcessInventory(normalizedData.physicalInventory, normalizedData.sales);
     
     // Prepare combined lists

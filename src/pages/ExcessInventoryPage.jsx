@@ -1,157 +1,175 @@
-import React, { useMemo, useState } from 'react';
+import React, { useState, useMemo, useCallback, memo } from 'react';
 import { Tag, Table } from 'antd';
 import { formatQuantity, formatMoney } from '../utils/financialCalculations.js';
 import { filterGenericData } from '../utils/dataFilter.js';
+import { useTranslation } from 'react-i18next';
 import UnifiedPageLayout from '../components/UnifiedPageLayout';
 import UnifiedTable from '../components/UnifiedTable';
 import UnifiedAlert from '../components/UnifiedAlert';
+import NavigationTabs from '../components/NavigationTabs';
+import { EXCESS_INVENTORY_DEFAULT_COLUMNS } from '../constants/excessInventoryColumns.js';
 
-function ExcessInventoryPage({ data, allReportsData }) {
+const ExcessInventoryPage = memo(({ data, allReportsData, availableReports }) => {
+    const { t } = useTranslation();
+    const [columnVisibility, setColumnVisibility] = useState({});
+    const [sortOrder, setSortOrder] = useState({});
+    const [pagination, setPagination] = useState({ pageSize: 50 });
+    const [density, setDensity] = useState('small');
     const [filters, setFilters] = useState({});
-
-    // Apply filters
-    const filteredData = useMemo(() => {
-        return filterGenericData(data, filters);
-    }, [data, filters]);
+    const [selectedTab, setSelectedTab] = useState('all');
 
     if (!data) {
         return (
             <div className="padding-lg">
-                <UnifiedAlert message="لا توجد بيانات للعرض" description="يرجى استيراد البيانات ومعالجتها أولاً" />
+                <UnifiedAlert message={t('noData')} description={t('importExcelFirst')} />
             </div>
         );
     }
 
-    // دالة لتحديد لون "بيان الفائض" لتسهيل القراءة
-    const getTagColor = (status) => {
-        switch (status) {
-            case 'راكد تماما': return 'red';
-            case 'احتياج': return 'orange';
-            case 'مخزون زائد': return 'blue';
-            case 'مناسب': return 'green';
-            default: return 'default';
-        }
-    };
+    // Apply Filters
+    const filteredData = useMemo(() => {
+        return filterGenericData(data, filters);
+    }, [data, filters]);
 
-    // تعريف اعمدة الجدول بناءً على مخرجات المنطق
-    const columns = [
-        { title: 'رمز المادة', dataIndex: 'رمز المادة', key: 'رمز المادة', width: 120 },
-        { title: 'اسم المادة', dataIndex: 'اسم المادة', key: 'اسم المادة' },
-        { title: 'الوحدة', dataIndex: 'الوحدة', key: 'الوحدة', width: 80, align: 'center' },
-        {
-            title: 'الكمية', dataIndex: 'الكمية', key: 'الكمية', width: 100, align: 'left',
-            render: (text) => formatQuantity(text)
-        },
-        {
-            title: 'كمية المشتريات', dataIndex: 'كمية المشتريات', key: 'كمية المشتريات', width: 100, align: 'left',
-            render: (text) => formatQuantity(text)
-        },
-        {
-            title: 'كمية المبيعات', dataIndex: 'كمية المبيعات', key: 'كمية المبيعات', width: 100, align: 'left',
-            render: (text) => formatQuantity(text)
-        },
-        {
-            title: 'نسبة المبيعات', dataIndex: 'نسبة المبيعات', key: 'نسبة المبيعات', width: 90, align: 'center',
-            render: (text) => text // Already formatted as string with %
-        },
-        {
-            title: 'المبيعات (90 يوم)', dataIndex: 'المبيعات', key: 'المبيعات', width: 120, align: 'left',
-            render: (text) => formatQuantity(text)
-        },
-        {
-            title: 'فائض المخزون', dataIndex: 'فائض المخزون', key: 'فائض المخزون', width: 120, align: 'left',
-            render: (text) => {
-                const value = parseFloat(text) || 0;
-                return <strong style={{ color: value < 0 ? '#cf1322' : (value > 0 ? '#1890ff' : '#52c41a') }}>{formatQuantity(value)}</strong>
-            }
-        },
-        {
-            title: 'نسبة الفائض', dataIndex: 'نسبة الفائض', key: 'نسبة الفائض', width: 100, align: 'center',
-            render: (text) => {
-                const val = parseInt(text) || 0;
-                return <span style={{ color: val < 0 ? 'orange' : (val > 0 ? '#1890ff' : 'green') }}>{text}</span>
-            }
-        },
-        {
-            title: 'معد للارجاع', dataIndex: 'معد للارجاع', key: 'معد للارجاع', width: 110, align: 'left',
-            render: (text) => {
-                const value = parseFloat(text) || 0;
-                return <strong>{formatQuantity(value)}</strong>
-            }
-        },
-        {
-            title: 'الاحتياج', dataIndex: 'الاحتياج', key: 'الاحتياج', width: 110, align: 'left',
-            render: (text) => {
-                const value = parseFloat(text) || 0;
-                return <strong style={{ color: value > 0 ? '#cf1322' : 'inherit' }}>{formatQuantity(value)}</strong>
-            }
-        },
-        {
-            title: 'بيان الفائض', dataIndex: 'بيان الفائض', key: 'بيان الفائض', width: 120, align: 'center',
-            render: (text) => <Tag color={getTagColor(text)}>{text}</Tag>
-        },
-    ];
+    // Tab Grouping
+    const tabData = useMemo(() => {
+        const statuses = [...new Set(filteredData.map(item => item['بيان الفائض']).filter(Boolean))];
+        const tabs = { all: filteredData };
+        statuses.forEach(s => {
+            tabs[s] = filteredData.filter(item => item['بيان الفائض'] === s);
+        });
+        return tabs;
+    }, [filteredData]);
 
-    // Calculate totals for summary (based on FILTERED data)
-    const totalQuantity = filteredData.reduce((sum, record) => sum + parseFloat(record['الكمية'] || 0), 0);
-    const totalPurchaseQuantity = filteredData.reduce((sum, record) => sum + parseFloat(record['كمية المشتريات'] || 0), 0);
-    const totalSalesQuantity = filteredData.reduce((sum, record) => sum + parseFloat(record['كمية المبيعات'] || 0), 0);
-    const totalSales = filteredData.reduce((sum, record) => sum + parseFloat(record['المبيعات'] || 0), 0);
-    const totalExcess = filteredData.reduce((sum, record) => sum + parseFloat(record['فائض المخزون'] || 0), 0);
-    const totalReturns = filteredData.reduce((sum, record) => sum + parseFloat(record['معد للارجاع'] || 0), 0);
-    const totalNeed = filteredData.reduce((sum, record) => sum + parseFloat(record['الاحتياج'] || 0), 0);
+    const activeList = tabData[selectedTab] || [];
+
+    // Apply Sorting
+    const sortedData = useMemo(() => {
+        if (!sortOrder.field || !sortOrder.order) return activeList;
+
+        return [...activeList].sort((a, b) => {
+            const aValue = a[sortOrder.field];
+            const bValue = b[sortOrder.field];
+            if (aValue == null && bValue == null) return 0;
+            if (aValue == null) return sortOrder.order === 'asc' ? -1 : 1;
+            if (bValue == null) return sortOrder.order === 'asc' ? 1 : -1;
+            const aNum = parseFloat(aValue);
+            const bNum = parseFloat(bValue);
+            if (!isNaN(aNum) && !isNaN(bNum)) {
+                return sortOrder.order === 'asc' ? aNum - bNum : bNum - aNum;
+            }
+            const comparison = String(aValue).localeCompare(String(bValue));
+            return sortOrder.order === 'asc' ? comparison : -comparison;
+        });
+    }, [activeList, sortOrder]);
+
+    const grandTotals = useMemo(() => {
+        return {
+            qty: activeList.reduce((sum, r) => sum + parseFloat(r['الكمية'] || 0), 0),
+            purch: activeList.reduce((sum, r) => sum + parseFloat(r['كمية المشتريات'] || 0), 0),
+            sales: activeList.reduce((sum, r) => sum + parseFloat(r['كمية المبيعات'] || 0), 0),
+            sales90: activeList.reduce((sum, r) => sum + parseFloat(r['المبيعات'] || 0), 0),
+            excess: activeList.reduce((sum, r) => sum + parseFloat(r['فائض المخزون'] || 0), 0),
+            returns: activeList.reduce((sum, r) => sum + parseFloat(r['معد للارجاع'] || 0), 0),
+            need: activeList.reduce((sum, r) => sum + parseFloat(r['الاحتياج'] || 0), 0)
+        };
+    }, [activeList]);
+
+    const tabsArray = useMemo(() => {
+        const arr = [{ value: 'all', label: `الكل (${tabData.all?.length || 0})` }];
+        Object.keys(tabData).filter(k => k !== 'all').forEach(k => {
+            arr.push({ value: k, label: `${k} (${tabData[k]?.length || 0})` });
+        });
+        return arr;
+    }, [tabData]);
+
+
+    const allColumns = EXCESS_INVENTORY_DEFAULT_COLUMNS;
+
+    const visibleColumns = useMemo(() =>
+        allColumns.filter(col => columnVisibility[col.dataIndex || col.key] !== false),
+        [columnVisibility]);
+
+    const handleColumnVisibilityChange = useCallback((newVisibility) => setColumnVisibility(newVisibility), []);
+    const handleSortOrderChange = useCallback((newSortOrder) => setSortOrder(newSortOrder), []);
+    const handlePaginationChange = useCallback((newPagination) => setPagination(newPagination), []);
+    const handleDensityChange = useCallback((newDensity) => setDensity(newDensity), []);
 
     return (
         <UnifiedPageLayout
-            title="تقرير فائض المخزون"
-            description="حساب الفارق بين إجمالي الكميات في المخزون والمبيعات خلال آخر 90 يومًا."
-            data={filteredData}
-            columns={columns}
-            filename="excess-inventory"
+            title={`تحليل فوائض ونواقص المخزون (${activeList.length} سجل)`}
+            description="دراسة ذكية للتوازن بين الكميات المتاحة ومعدلات البيع الفعلية (آخر 90 يوماً)."
+            interpretation="يريد هذا التقرير الإجابة على سؤال: هل تملك بضاعة أكثر مما تبيع؟ أم تبيع أكثر مما تملك؟ هو 'ميزان المخزون' الذي يكشف لك السلع التي جمدت سيولتك (راكدة) والسلع المفترض توفيرها فوراً لتجنب ضياع فرص البيع (احتياج)."
+            data={sortedData}
+            columns={visibleColumns}
+            filename={`excess_inventory_${selectedTab}`}
             allReportsData={allReportsData}
+            availableReports={availableReports}
+            reportKey="excessInventory"
+            exportColumns={EXCESS_INVENTORY_DEFAULT_COLUMNS}
+            onColumnVisibilityChange={handleColumnVisibilityChange}
+            onSortOrderChange={handleSortOrderChange}
+            onPaginationChange={handlePaginationChange}
+            pagination={pagination}
+            onDensityChange={handleDensityChange}
+            density={density}
             filterData={data}
             filterDataType="default"
             onFilterChange={setFilters}
+            category="basic"
         >
             <UnifiedTable
-                dataSource={filteredData}
-                columns={columns}
-                rowKey="رمز المادة"
-                title={`تحليل فائض المخزون (${filteredData.length} صنف)`}
-                summary={() => (
-                    <Table.Summary.Row>
-                        <Table.Summary.Cell index={0} colSpan={3}>
-                            <strong className="unified-table-summary">الإجمالي الكلي</strong>
-                        </Table.Summary.Cell>
-                        <Table.Summary.Cell index={3}>
-                            <strong className="unified-table-summary">{formatQuantity(totalQuantity)}</strong>
-                        </Table.Summary.Cell>
-                        <Table.Summary.Cell index={4}>
-                            <strong className="unified-table-summary">{formatQuantity(totalPurchaseQuantity)}</strong>
-                        </Table.Summary.Cell>
-                        <Table.Summary.Cell index={5}>
-                            <strong className="unified-table-summary">{formatQuantity(totalSalesQuantity)}</strong>
-                        </Table.Summary.Cell>
-                        <Table.Summary.Cell index={6}></Table.Summary.Cell>
-                        <Table.Summary.Cell index={7}>
-                            <strong className="unified-table-summary">{formatQuantity(totalSales)}</strong>
-                        </Table.Summary.Cell>
-                        <Table.Summary.Cell index={8}>
-                            <strong className="unified-table-summary">{formatQuantity(totalExcess)}</strong>
-                        </Table.Summary.Cell>
-                        <Table.Summary.Cell index={9}></Table.Summary.Cell>
-                        <Table.Summary.Cell index={10}>
-                            <strong className="unified-table-summary">{formatQuantity(totalReturns)}</strong>
-                        </Table.Summary.Cell>
-                        <Table.Summary.Cell index={11}>
-                            <strong className="unified-table-summary">{formatQuantity(totalNeed)}</strong>
-                        </Table.Summary.Cell>
-                        <Table.Summary.Cell index={12}></Table.Summary.Cell>
-                    </Table.Summary.Row>
-                )}
+                headerExtra={
+                    <NavigationTabs
+                        value={selectedTab}
+                        onChange={(e) => {
+                            setSelectedTab(e.target.value);
+                            setPagination(prev => ({ ...prev, current: 1 }));
+                        }}
+                        tabs={tabsArray}
+                    />
+                }
+                dataSource={sortedData}
+                columns={visibleColumns}
+                rowKey="م"
+                scroll={{ x: 1800 }}
+                size={density}
+                pagination={{ ...pagination, total: activeList.length, showSizeChanger: true }}
+                onPaginationChange={handlePaginationChange}
+                virtualized={false}
+                title={`تحليل التدفق المخزني - ${selectedTab === 'all' ? 'الكل' : selectedTab} (${activeList.length} سجل)`}
+                summary={(pageData) => {
+                    const pageTotals = {
+                        qty: pageData.reduce((sum, r) => sum + parseFloat(r['الكمية'] || 0), 0),
+                        sales90: pageData.reduce((sum, r) => sum + parseFloat(r['المبيعات'] || 0), 0),
+                        excess: pageData.reduce((sum, r) => sum + parseFloat(r['فائض المخزون'] || 0), 0)
+                    };
+                    return (
+                        <>
+                            <Table.Summary.Row>
+                                <Table.Summary.Cell index={0} colSpan={3}>
+                                    <strong className="unified-table-summary">إجمالي أرقام هذه الصفحة</strong>
+                                </Table.Summary.Cell>
+                                <Table.Summary.Cell index={3}><strong className="unified-table-summary">{formatQuantity(pageTotals.qty)}</strong></Table.Summary.Cell>
+                                <Table.Summary.Cell index={4} colSpan={2}></Table.Summary.Cell>
+                                <Table.Summary.Cell index={6}><strong className="unified-table-summary">{formatQuantity(pageTotals.sales90)}</strong></Table.Summary.Cell>
+                                <Table.Summary.Cell index={7} colSpan={5}></Table.Summary.Cell>
+                            </Table.Summary.Row>
+                            <Table.Summary.Row>
+                                <Table.Summary.Cell index={0} colSpan={3}>
+                                    <strong className="unified-table-summary">الإجمالي الكلي للقائمة</strong>
+                                </Table.Summary.Cell>
+                                <Table.Summary.Cell index={3}><strong className="unified-table-summary">{formatQuantity(grandTotals.qty)}</strong></Table.Summary.Cell>
+                                <Table.Summary.Cell index={4} colSpan={2}></Table.Summary.Cell>
+                                <Table.Summary.Cell index={6}><strong className="unified-table-summary">{formatQuantity(grandTotals.sales90)}</strong></Table.Summary.Cell>
+                                <Table.Summary.Cell index={7} colSpan={5}></Table.Summary.Cell>
+                            </Table.Summary.Row>
+                        </>
+                    );
+                }}
             />
         </UnifiedPageLayout>
     );
-}
+});
 
 export default ExcessInventoryPage;

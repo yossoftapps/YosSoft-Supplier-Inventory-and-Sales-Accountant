@@ -137,7 +137,7 @@ async function runGuiImportTest() {
     const purchaseReturns = purchasesData.filter(row => row[9] === 'مرتجع' || row[9] === 'Return');
     const mainPurchases = purchasesData.filter(row => row[9] !== 'مرتجع' && row[9] !== 'Return');
 
-    const netPurchasesResult = calculateNetPurchases(mainPurchases, purchaseReturns, rawData.purchases[0]);
+    const netPurchasesResult = await calculateNetPurchases(mainPurchases, purchaseReturns, rawData.purchases[0]);
     console.log(`   ✓ Net Purchases: ${netPurchasesResult.netPurchasesList.length}`);
     console.log(`   ✓ Orphan Returns: ${netPurchasesResult.orphanReturnsList.length}`);
 
@@ -146,42 +146,42 @@ async function runGuiImportTest() {
     const salesReturns = salesData.filter(row => row[8] === 'مرتجع' || row[8] === 'Return');
     const mainSales = salesData.filter(row => row[8] !== 'مرتجع' && row[8] !== 'Return');
 
-    const netSalesResult = calculateNetSales(mainSales, salesReturns, rawData.sales[0]);
+    const netSalesResult = await calculateNetSales(mainSales, salesReturns, rawData.sales[0]);
     console.log(`   ✓ Net Sales: ${netSalesResult.netSalesList.length}`);
     console.log(`   ✓ Orphan Returns: ${netSalesResult.orphanReturnsList.length}`);
 
     // 3. Physical Inventory
     console.log('\n3️⃣  Process Physical Inventory...');
-    const physicalInventoryResult = processPhysicalInventory(rawData.physicalInventory);
+    const physicalInventoryResult = await processPhysicalInventory(rawData.physicalInventory, rawData.purchases);
     console.log(`   ✓ List E: ${physicalInventoryResult.listE.length}`);
     console.log(`   ✓ List F: ${physicalInventoryResult.listF.length}`);
 
+    // Prepare combined net lists for downstream reports
+    const netPurchasesCombined = [ ...(netPurchasesResult.netPurchasesList || []), ...(netPurchasesResult.orphanReturnsList || []) ];
+    const netSalesCombined = [ ...(netSalesResult.netSalesList || []), ...(netSalesResult.orphanReturnsList || []) ];
+
     // 3.5. Excess Inventory (depends on physicalInventory and sales)
     console.log('\n3.5️⃣  Calculate Excess Inventory...');
-    const excessInventoryResult = calculateExcessInventory(rawData.physicalInventory, rawData.sales);
+    const excessInventoryResult = await calculateExcessInventory(rawData.physicalInventory, rawData.sales, netPurchasesCombined, netSalesCombined);
     console.log(`   ✓ Excess Inventory: ${excessInventoryResult.length}`);
 
     // 4. Ending Inventory
     console.log('\n4️⃣  Calculate Ending Inventory...');
-    // Note: calculateEndingInventory expects the RESULT objects, not just the lists
-    const endingInventoryResult = calculateEndingInventory(
-      netPurchasesResult,  // This is the result object with netPurchasesList and orphanReturnsList
-      physicalInventoryResult,  // This has listE and listF
-      excessInventoryResult  // This is the excess inventory array
+    // Pass combined purchases array and physical inventory listE to the ending inventory calculator
+    const endingInventoryResult = await calculateEndingInventory(
+      netPurchasesCombined,
+      physicalInventoryResult.listE,
+      excessInventoryResult
     );
     console.log(`   ✓ Ending Inventory List: ${endingInventoryResult.endingInventoryList.length}`);
     console.log(`   ✓ List B: ${endingInventoryResult.listB.length}`);
 
+    // Diagnostic: how many items are marked as 'معد للارجاع' > 0
+    const returnsCount = endingInventoryResult.endingInventoryList.filter(item => (parseFloat(item['معد للارجاع']) || 0) > 0).length;
+    console.log(`   ✓ Items with 'معد للارجاع' > 0: ${returnsCount}`);
+
     // 5. Book Inventory
     console.log('\n5️⃣  Calculate Book Inventory...');
-    const netPurchasesCombined = [
-      ...(netPurchasesResult.netPurchasesList || []),
-      ...(netPurchasesResult.orphanReturnsList || [])
-    ];
-    const netSalesCombined = [
-      ...(netSalesResult.netSalesList || []),
-      ...(netSalesResult.orphanReturnsList || [])
-    ];
     const bookInventoryResult = calculateBookInventory(
       netPurchasesCombined,
       netSalesCombined
@@ -190,9 +190,9 @@ async function runGuiImportTest() {
 
     // 6. Sales Cost
     console.log('\n6️⃣  Calculate Sales Cost...');
-    const salesCostResult = calculateSalesCost(
-      netPurchasesResult,  // Full result object
-      netSalesResult       // Full result object
+    const salesCostResult = await calculateSalesCost(
+      netPurchasesCombined,
+      netSalesCombined
     );
     // Note: Sales Cost returns { costOfSalesList: [...] }, not an array
     const salesCostList = salesCostResult.costOfSalesList || (Array.isArray(salesCostResult) ? salesCostResult : []);
@@ -200,7 +200,7 @@ async function runGuiImportTest() {
 
     // 7. Supplier Payables
     console.log('\n7️⃣  Calculate Supplier Payables...');
-    const supplierPayablesResult = calculateSupplierPayables(
+    const supplierPayablesResult = await calculateSupplierPayables(
       balancesData,
       endingInventoryResult.endingInventoryList
     );
@@ -238,9 +238,9 @@ async function runGuiImportTest() {
       console.log(netSalesResult.netSalesList[0]);
     }
 
-    if (salesCostResult.length > 0) {
+    if (salesCostList.length > 0) {
       console.log('\nFirst Sales Cost:');
-      console.log(salesCostResult[0]);
+      console.log(salesCostList[0]);
     }
 
     if (supplierPayablesResult.length > 0) {

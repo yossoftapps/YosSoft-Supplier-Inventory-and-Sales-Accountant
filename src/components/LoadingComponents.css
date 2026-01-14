@@ -1,0 +1,477 @@
+/**
+ * ملف CSS لمكونات التحميل
+ */
+
+/* ========================================
+   دوّار التحميل (Spinner)
+   ======================================== */
+
+.spinner {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.spinner__circle {
+    border: 3px solid #f0f0f0;
+    border-top-color: #1890ff;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+.spinner--small .spinner__circle {
+    width: 20px;
+    height: 20px;
+    border-width: 2px;
+}
+
+.spinner--medium .spinner__circle {
+    width: 40px;
+    height: 40px;
+    border-width: 3px;
+}
+
+.spinner--large .spinner__circle {
+    width: 60px;
+    height: 60px;
+    border-width: 4px;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* ========================================
+   شاشة التحميل الكاملة
+   ======================================== */
+
+.loading-screen {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(255, 255, 255, 0.95);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    backdrop-filter: blur(4px);
+}
+
+.loading-screen__content {
+    text-align: center;
+    padding: 40px;
+    animation: fadeInScale 0.4s ease;
+}
+
+.loading-screen__message {
+    margin: 24px 0 8px;
+    font-size: 20px;
+    font-weight: 600;
+    color: #262626;
+}
+
+.loading-screen__submessage {
+    margin: 0;
+    font-size: 14px;
+    color: #8c8c8c;
+}
+
+.loading-screen__progress {
+    margin-top: 24px;
+    width: 300px;
+}
+
+.loading-screen__progress-bar {
+    width: 100%;
+    height: 8px;
+    background: #f0f0f0;
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 8px;
+}
+
+.loading-screen__progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #1890ff, #52c41a);
+    border-radius: 4px;
+    transition: width 0.3s ease;
+    animation: shimmer 1.5s infinite;
+}
+
+.loading-screen__progress-text {
+    font-size: 14px;
+    font-weight: 600;
+    color: #1890ff;
+}
+
+@keyframes fadeInScale {
+    from {
+        opacity: 0;
+        transform: scale(0.9);
+    }
+
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+@keyframes shimmer {
+    0% {
+        background-position: -300px 0;
+    }
+
+    100% {
+        background-position: 300px 0;
+    }
+}
+
+/* ========================================
+   هيكل عظمي للبطاقات
+   ======================================== */
+
+.card-skeleton {
+    background: #ffffff;
+    border-radius: 12px;
+    padding: 24px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    margin-bottom: 16px;
+}
+
+.card-skeleton__header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.card-skeleton__content {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.skeleton {
+    background: linear-gradient(90deg,
+            #f0f0f0 25%,
+            #e0e0e0 50%,
+            #f0f0f0 75%);
+    background-size: 200% 100%;
+    animation: loading 1.5s infinite;
+    border-radius: 4px;
+}
+
+.skeleton--circle {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+}
+
+.skeleton--text {
+    height: 16px;
+    width: 100%;
+}
+
+.skeleton--text-title {
+    height: 20px;
+    width: 60%;
+}
+
+.skeleton--text-short {
+    width: 40%;
+}
+
+.skeleton--text-header {
+    height: 18px;
+    width: 100%;
+}
+
+@keyframes loading {
+    0% {
+        background-position: 200% 0;
+    }
+
+    100% {
+        background-position: -200% 0;
+    }
+}
+
+/* ========================================
+   هيكل عظمي للجداول
+   ======================================== */
+
+.table-skeleton {
+    background: #ffffff;
+    border-radius: 12px;
+    padding: 24px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.table-skeleton__header {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+    gap: 16px;
+    margin-bottom: 20px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.table-skeleton__body {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.table-skeleton__row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+    gap: 16px;
+}
+
+/* ========================================
+   مؤشر التقدم الدائري
+   ======================================== */
+
+.circular-progress {
+    position: relative;
+    display: inline-flex;
+}
+
+.circular-progress__bg {
+    fill: none;
+    stroke: #f0f0f0;
+}
+
+.circular-progress__fill {
+    fill: none;
+    stroke-linecap: round;
+    transform: rotate(-90deg);
+    transform-origin: 50% 50%;
+    transition: stroke-dashoffset 0.3s ease;
+}
+
+.circular-progress__text {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+}
+
+.circular-progress__percentage {
+    font-size: 24px;
+    font-weight: 700;
+    color: #1890ff;
+}
+
+/* ========================================
+   شريط التقدم الخطي
+   ======================================== */
+
+.linear-progress {
+    position: relative;
+    width: 100%;
+    background: #f0f0f0;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.linear-progress__fill {
+    height: 100%;
+    background: #1890ff;
+    border-radius: 4px;
+    transition: width 0.3s ease;
+}
+
+.linear-progress__fill--animated {
+    position: relative;
+    overflow: hidden;
+}
+
+.linear-progress__fill--animated::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(90deg,
+            transparent,
+            rgba(255, 255, 255, 0.3),
+            transparent);
+    animation: shimmer 1.5s infinite;
+}
+
+.linear-progress__text {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 12px;
+    font-weight: 600;
+    color: #ffffff;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+/* ========================================
+   نقاط التحميل المتحركة
+   ======================================== */
+
+.dot-loader {
+    display: inline-flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.dot-loader__dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #1890ff;
+    animation: dotBounce 1.4s infinite ease-in-out both;
+}
+
+.dot-loader__dot:nth-child(1) {
+    animation-delay: -0.32s;
+}
+
+.dot-loader__dot:nth-child(2) {
+    animation-delay: -0.16s;
+}
+
+@keyframes dotBounce {
+
+    0%,
+    80%,
+    100% {
+        transform: scale(0);
+        opacity: 0.5;
+    }
+
+    40% {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+/* ========================================
+   طبقة التحميل المتراكبة
+   ======================================== */
+
+.loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9998;
+    backdrop-filter: blur(2px);
+    animation: fadeIn 0.3s ease;
+}
+
+.loading-overlay--transparent {
+    background: rgba(255, 255, 255, 0.8);
+}
+
+.loading-overlay__content {
+    background: #ffffff;
+    padding: 40px;
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+    text-align: center;
+    animation: fadeInScale 0.4s ease;
+}
+
+.loading-overlay__message {
+    margin: 20px 0 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: #262626;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+/* ========================================
+   التصميم المتجاوب
+   ======================================== */
+
+@media (max-width: 768px) {
+    .loading-screen__progress {
+        width: 250px;
+    }
+
+    .loading-screen__message {
+        font-size: 18px;
+    }
+
+    .circular-progress__percentage {
+        font-size: 20px;
+    }
+
+    .loading-overlay__content {
+        padding: 30px;
+        margin: 20px;
+    }
+}
+
+/* ========================================
+   الوضع الداكن
+   ======================================== */
+
+@media (prefers-color-scheme: dark) {
+    .loading-screen {
+        background: rgba(0, 0, 0, 0.95);
+    }
+
+    .loading-screen__message {
+        color: #ffffff;
+    }
+
+    .loading-screen__submessage {
+        color: #a0a0a0;
+    }
+
+    .card-skeleton,
+    .table-skeleton {
+        background: #1f1f1f;
+    }
+
+    .skeleton {
+        background: linear-gradient(90deg,
+                #2a2a2a 25%,
+                #3a3a3a 50%,
+                #2a2a2a 75%);
+    }
+
+    .circular-progress__bg {
+        stroke: #2a2a2a;
+    }
+
+    .linear-progress {
+        background: #2a2a2a;
+    }
+
+    .loading-overlay__content {
+        background: #1f1f1f;
+    }
+
+    .loading-overlay__message {
+        color: #ffffff;
+    }
+}

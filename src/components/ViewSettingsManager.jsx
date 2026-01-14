@@ -1,31 +1,36 @@
 import React, { useState, useEffect, useRef, memo } from 'react';
-import { Button, Popover, Checkbox, Divider, Slider, Space, Typography, Tooltip } from 'antd';
-import { SettingOutlined, EyeInvisibleOutlined, EyeOutlined, ReloadOutlined } from '@ant-design/icons';
-import { 
-  getViewSettings, 
-  saveColumnVisibility, 
-  saveSortOrder, 
+import { Button, Popover, Checkbox, Divider, Slider, Space, Typography, Tooltip, Segmented } from 'antd';
+import { SettingOutlined, EyeInvisibleOutlined, EyeOutlined, ReloadOutlined, TableOutlined } from '@ant-design/icons';
+import {
+  getViewSettings,
+  saveColumnVisibility,
+  saveSortOrder,
   savePaginationSettings,
+  saveDensitySettings,
   clearViewSettings
 } from '../utils/viewSettingsManager.js';
 import { useTranslation } from 'react-i18next';
 
 const { Text } = Typography;
 
-const ViewSettingsManager = memo(({ 
-  reportKey, 
-  columns = [], 
+const ViewSettingsManager = memo(({
+  requiredColumns = [], // Array of column keys that cannot be hidden
+  reportKey,
+  columns = [],
   onColumnVisibilityChange,
   onSortOrderChange,
   onPaginationChange,
   showColumnVisibility = true,
   showSortOptions = true,
-  showPaginationOptions = true
+  showPaginationOptions = true,
+  showDensityOptions = true,
+  onDensityChange
 }) => {
   const { t } = useTranslation();
   const [columnVisibility, setColumnVisibility] = useState({});
   const [sortOrder, setSortOrder] = useState({});
-  const [pagination, setPagination] = useState({ pageSize: 50 });
+  const [pagination, setPagination] = useState({ pageSize: 100 });
+  const [density, setDensity] = useState('middle');
   const [open, setOpen] = useState(false);
   const buttonRef = useRef(null);
   const initialLoadRef = useRef(false);
@@ -39,16 +44,17 @@ const ViewSettingsManager = memo(({
     let loadedColumnVisibility = null;
     let loadedSortOrder = null;
     let loadedPagination = null;
-    
+
     // Load column visibility
     if (savedSettings.columnVisibility) {
       loadedColumnVisibility = savedSettings.columnVisibility;
       setColumnVisibility(savedSettings.columnVisibility);
     } else {
-      // Default: all columns visible
+      // Default: all columns visible, but required columns must stay visible
       const defaultVisibility = {};
       columns.forEach(col => {
-        defaultVisibility[col.dataIndex || col.key] = true;
+        const dataIndex = col.dataIndex || col.key;
+        defaultVisibility[dataIndex] = requiredColumns.includes(dataIndex) || true;
       });
       loadedColumnVisibility = defaultVisibility;
       setColumnVisibility(defaultVisibility);
@@ -68,14 +74,14 @@ const ViewSettingsManager = memo(({
       loadedPagination = savedSettings.pagination;
       setPagination(savedSettings.pagination);
     } else {
-      loadedPagination = { pageSize: 50 };
+      loadedPagination = { pageSize: 100 };
     }
 
     // Only notify parent if there are changes or if this is initial load
     // We use a ref to track if this is the first load
     if (!initialLoadRef.current) {
       initialLoadRef.current = true;
-      
+
       if (onColumnVisibilityChange && loadedColumnVisibility) {
         onColumnVisibilityChange(loadedColumnVisibility);
       }
@@ -85,6 +91,12 @@ const ViewSettingsManager = memo(({
       if (onPaginationChange && loadedPagination) {
         onPaginationChange(loadedPagination);
       }
+
+      // Load density
+      if (savedSettings.density) {
+        setDensity(savedSettings.density);
+        if (onDensityChange) onDensityChange(savedSettings.density);
+      }
     }
   }, [reportKey, columns]);
 
@@ -92,11 +104,11 @@ const ViewSettingsManager = memo(({
   const handleColumnVisibilityChange = (dataIndex, checked) => {
     const newVisibility = { ...columnVisibility, [dataIndex]: checked };
     setColumnVisibility(newVisibility);
-    
+
     if (onColumnVisibilityChange) {
       onColumnVisibilityChange(newVisibility);
     }
-    
+
     // Save to localStorage
     if (reportKey) {
       saveColumnVisibility(reportKey, newVisibility);
@@ -107,14 +119,16 @@ const ViewSettingsManager = memo(({
   const toggleAllColumns = (visible) => {
     const newVisibility = {};
     columns.forEach(col => {
-      newVisibility[col.dataIndex || col.key] = visible;
+      const dataIndex = col.dataIndex || col.key;
+      // Keep required columns visible regardless of toggle state
+      newVisibility[dataIndex] = requiredColumns.includes(dataIndex) ? true : visible;
     });
     setColumnVisibility(newVisibility);
-    
+
     if (onColumnVisibilityChange) {
       onColumnVisibilityChange(newVisibility);
     }
-    
+
     // Save to localStorage
     if (reportKey) {
       saveColumnVisibility(reportKey, newVisibility);
@@ -125,11 +139,11 @@ const ViewSettingsManager = memo(({
   const handleSortOrderChange = (field, order) => {
     const newSortOrder = { field, order };
     setSortOrder(newSortOrder);
-    
+
     if (onSortOrderChange) {
       onSortOrderChange(newSortOrder);
     }
-    
+
     // Save to localStorage
     if (reportKey) {
       saveSortOrder(reportKey, newSortOrder);
@@ -140,14 +154,25 @@ const ViewSettingsManager = memo(({
   const handlePageSizeChange = (value) => {
     const newPagination = { ...pagination, pageSize: value };
     setPagination(newPagination);
-    
+
     if (onPaginationChange) {
       onPaginationChange(newPagination);
     }
-    
+
     // Save to localStorage
     if (reportKey) {
       savePaginationSettings(reportKey, newPagination);
+    }
+  };
+
+  // Handle density change
+  const handleDensityChange = (value) => {
+    setDensity(value);
+    if (onDensityChange) {
+      onDensityChange(value);
+    }
+    if (reportKey) {
+      saveDensitySettings(reportKey, value);
     }
   };
 
@@ -157,16 +182,17 @@ const ViewSettingsManager = memo(({
     if (reportKey) {
       clearViewSettings(reportKey);
     }
-    
+
     // Reset state
     const defaultVisibility = {};
     columns.forEach(col => {
-      defaultVisibility[col.dataIndex || col.key] = true;
+      const dataIndex = col.dataIndex || col.key;
+      defaultVisibility[dataIndex] = requiredColumns.includes(dataIndex) || true;
     });
     setColumnVisibility(defaultVisibility);
     setSortOrder({});
-    setPagination({ pageSize: 50 });
-    
+    setPagination({ pageSize: 100 });
+
     // Notify parent components
     if (onColumnVisibilityChange) {
       onColumnVisibilityChange(defaultVisibility);
@@ -175,7 +201,11 @@ const ViewSettingsManager = memo(({
       onSortOrderChange({});
     }
     if (onPaginationChange) {
-      onPaginationChange({ pageSize: 50 });
+      onPaginationChange({ pageSize: 100 });
+    }
+    setDensity('middle');
+    if (onDensityChange) {
+      onDensityChange('middle');
     }
   };
 
@@ -191,16 +221,16 @@ const ViewSettingsManager = memo(({
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
           <Text strong>{t('columnVisibility')}</Text>
           <Space size="small">
-            <Button 
-              type="link" 
+            <Button
+              type="link"
               size="small"
               onClick={() => toggleAllColumns(true)}
               disabled={allVisible}
             >
               {t('showAll')}
             </Button>
-            <Button 
-              type="link" 
+            <Button
+              type="link"
               size="small"
               onClick={() => toggleAllColumns(false)}
               disabled={noneVisible}
@@ -217,8 +247,12 @@ const ViewSettingsManager = memo(({
                 <Checkbox
                   checked={columnVisibility[dataIndex] !== false}
                   onChange={e => handleColumnVisibilityChange(dataIndex, e.target.checked)}
+                  disabled={requiredColumns.includes(dataIndex)}
                 >
                   {col.title}
+                  {requiredColumns.includes(dataIndex) && (
+                    <span style={{ color: '#d32f2f', marginLeft: '4px' }}> *</span>
+                  )}
                 </Checkbox>
               </div>
             );
@@ -241,7 +275,7 @@ const ViewSettingsManager = memo(({
             return (
               <div key={dataIndex} style={{ padding: '4px 0' }}>
                 <Space>
-                  <Button 
+                  <Button
                     type={sortOrder.field === dataIndex && sortOrder.order === 'asc' ? "primary" : "default"}
                     size="small"
                     onClick={() => handleSortOrderChange(dataIndex, 'asc')}
@@ -249,7 +283,7 @@ const ViewSettingsManager = memo(({
                     ▲
                   </Button>
                   <span>{col.title}</span>
-                  <Button 
+                  <Button
                     type={sortOrder.field === dataIndex && sortOrder.order === 'desc' ? "primary" : "default"}
                     size="small"
                     onClick={() => handleSortOrderChange(dataIndex, 'desc')}
@@ -263,8 +297,8 @@ const ViewSettingsManager = memo(({
         </div>
         {sortOrder.field && (
           <div style={{ marginTop: 8 }}>
-            <Button 
-              icon={<ReloadOutlined />} 
+            <Button
+              icon={<ReloadOutlined />}
               size="small"
               onClick={() => handleSortOrderChange(null, null)}
             >
@@ -272,6 +306,27 @@ const ViewSettingsManager = memo(({
             </Button>
           </div>
         )}
+      </div>
+    );
+  };
+
+  // Render density options
+  const renderDensityOptions = () => {
+    if (!showDensityOptions) return null;
+
+    return (
+      <div>
+        <Text strong style={{ display: 'block', marginBottom: 8 }}>{t('dataDensity') || 'كثافة البيانات'}</Text>
+        <Segmented
+          block
+          value={density}
+          onChange={handleDensityChange}
+          options={[
+            { label: 'مكثف', value: 'small' },
+            { label: 'متوازن', value: 'middle' },
+            { label: 'واسع', value: 'default' }
+          ]}
+        />
       </div>
     );
   };
@@ -285,16 +340,16 @@ const ViewSettingsManager = memo(({
         <Text strong>{t('pageSize')}</Text>
         <div style={{ marginTop: 8 }}>
           <Slider
-            min={10}
-            max={200}
-            step={10}
+            min={50}
+            max={500}
+            step={50}
             value={pagination.pageSize}
             onChange={handlePageSizeChange}
             marks={{
-              10: '10',
               50: '50',
               100: '100',
-              200: '200'
+              200: '200',
+              500: '500'
             }}
           />
         </div>
@@ -305,24 +360,28 @@ const ViewSettingsManager = memo(({
   const content = (
     <div style={{ width: 300 }}>
       {renderColumnVisibilityControls()}
-      
+
       {(showColumnVisibility && (showSortOptions || showPaginationOptions)) && (
         <Divider style={{ margin: '12px 0' }} />
       )}
-      
+
       {renderSortOptions()}
-      
+
       {showSortOptions && showPaginationOptions && (
         <Divider style={{ margin: '12px 0' }} />
       )}
-      
+
       {renderPaginationOptions()}
-      
+
       <Divider style={{ margin: '12px 0' }} />
-      
+
+      {renderDensityOptions()}
+
+      <Divider style={{ margin: '12px 0' }} />
+
       <div style={{ textAlign: 'right' }}>
-        <Button 
-          icon={<ReloadOutlined />} 
+        <Button
+          icon={<ReloadOutlined />}
           onClick={resetToDefault}
           size="small"
         >
@@ -341,9 +400,13 @@ const ViewSettingsManager = memo(({
       onOpenChange={setOpen}
       placement="bottomRight"
     >
-      <Tooltip title={t('viewSettings')}>
-        <Button ref={buttonRef} icon={<SettingOutlined />} />
-      </Tooltip>
+      <Button
+        ref={buttonRef}
+        icon={<SettingOutlined />}
+        className="unified-secondary-button"
+      >
+        {t('viewSettings')}
+      </Button>
     </Popover>
   );
 });

@@ -1,12 +1,21 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import { visualizer } from 'rollup-plugin-visualizer';
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    visualizer({
+      open: true,
+      gzipSize: true,
+      brotliSize: true,
+      filename: 'stats.html'
+    })
+  ],
   base: './',
   server: {
     port: 3005,
-    strictPort: false, // Allow fallback when port is occupied
+    strictPort: true, // Fail fast if port is occupied to avoid mismatched server discovery
     host: 'localhost',
     hmr: {
       protocol: 'ws',
@@ -19,7 +28,7 @@ export default defineConfig({
     minify: 'terser',
     terserOptions: {
       compress: {
-        drop_console: false,
+        drop_console: true,
         drop_debugger: true,
       },
     },

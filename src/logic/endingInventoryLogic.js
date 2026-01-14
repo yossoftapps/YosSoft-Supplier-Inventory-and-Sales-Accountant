@@ -15,31 +15,32 @@ import {
 
 // دالة مساعدة للفرز حسب تاريخ الصلاحية من الاقرب إلى الابعد
 const sortByExpiryAsc = (data) => {
-  return data.sort((a, b) => new Date(a['تاريخ الصلاحية']) - new Date(b['تاريخ الصلاحية']));
+  return data.sort((a, b) => {
+    const d1 = a['تاريخ الصلاحية'] ? new Date(a['تاريخ الصلاحية']).getTime() : 0;
+    const d2 = b['تاريخ الصلاحية'] ? new Date(b['تاريخ الصلاحية']).getTime() : 0;
+    return d1 - d2;
+  });
 };
 
 // دالة مساعدة لحساب الاعمدة الإضافية في المخزون النهائي (نسخة مصححة وواضحة)
-function calculateAdditionalFields(item, excessInventoryMap) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+function calculateAdditionalFields(item, excessInventoryMap, todayObj) {
+  const today = todayObj;
 
   // 1. حساب عمر الصنف
   const purchaseDate = new Date(item['تاريخ الشراء']);
   const ageInDays = item['تاريخ الشراء'] ? Math.floor((today - purchaseDate) / (1000 * 60 * 60 * 24)) : 0;
   item['عمر الصنف'] = roundToInteger(ageInDays);
 
-  // 2. حساب بيان الصلاحية
+  // 2. حساب بيان الصلاحية (LOGIC CORRECTION)
   const expiryDate = new Date(item['تاريخ الصلاحية']);
   const daysToExpiry = expiryDate ? Math.floor((expiryDate - today) / (1000 * 60 * 60 * 24)) : null;
   let validityStatus = 'غير معروف';
   if (daysToExpiry !== null) {
-    if (daysToExpiry < 0) {
+    if (daysToExpiry < 31) {
       validityStatus = 'منتهي';
-    } else if (daysToExpiry <= 30) { // 31 يومًا
-      validityStatus = 'منتهي';
-    } else if (daysToExpiry <= 180) { // 181 يومًا
+    } else if (daysToExpiry < 181) {
       validityStatus = 'قريب جدا';
-    } else if (daysToExpiry <= 360) { // 361 يومًا
+    } else if (daysToExpiry < 361) {
       validityStatus = 'قريب';
     } else {
       validityStatus = 'بعيد';
@@ -54,7 +55,7 @@ function calculateAdditionalFields(item, excessInventoryMap) {
   }
   item['بيان الحركة'] = movementStatus;
 
-  // 4. حساب الحالة
+  // 4. حساب الحالة (يستخدم اسم 'الحالة' بالفعل)
   let conditionStatus = 'جيد'; // القيمة الافتراضية
 
   // اولوية لبيان الصلاحية
@@ -68,13 +69,13 @@ function calculateAdditionalFields(item, excessInventoryMap) {
     conditionStatus = (ageInDays <= 90) ? 'صنف جديد' : 'معد للارجاع';
   } else if (movementStatus === 'احتياج') {
     conditionStatus = (ageInDays <= 90) ? 'صنف جديد' : 'جيد';
-  } else { // إذا كان مناسب او غير محدد
+  } else { // إذا كان مثالي او غير محدد
     conditionStatus = (ageInDays <= 90) ? 'صنف جديد' : 'جيد';
   }
   item['الحالة'] = conditionStatus;
 
   // 5. حساب البيان النهائي (بناءً على الاولوية)
-  let finalStatus = 'مناسب'; // القيمة الافتراضية
+  let finalStatus = 'مثالي'; // القيمة الافتراضية
 
   if (validityStatus === 'منتهي') {
     finalStatus = 'منتهي';
@@ -90,34 +91,30 @@ function calculateAdditionalFields(item, excessInventoryMap) {
     if (movementStatus === 'راكد تماما') finalStatus = 'راكد تماما';
     else if (movementStatus === 'مخزون زائد') finalStatus = 'مخزون زائد';
     else if (movementStatus === 'احتياج') finalStatus = 'احتياج';
-    else finalStatus = 'مناسب';
+    else finalStatus = 'مثالي';
   }
   item['البيان'] = finalStatus;
 
   // 6. حساب فائض المخزون وكل القيم المرتبطة به
-  if (excessInventoryMap && excessInventoryMap.has(item['رمز المادة'])) {
-    const excessItem = excessInventoryMap.get(item['رمز المادة']);
+  const excessItem = excessInventoryMap.has(item['رمز المادة']) ? excessInventoryMap.get(item['رمز المادة']) : null;
+
+  if (excessItem) {
     const totalInventory = roundToDecimalPlaces(excessItem['الكمية'] || 0, 2);
     const excess = roundToDecimalPlaces(excessItem['فائض المخزون'] || 0, 2);
 
     item['نسبة الفائض'] = excessItem['نسبة الفائض'] || '0%';
 
     const excessPercentStr = excessItem['نسبة الفائض'] || '0%';
-    const excessPercentAndSign = parseFloat(excessPercentStr) || 0; // e.g. -50 or 50
+    const excessPercentAndSign = parseFloat(excessPercentStr) || 0; 
 
-    // حساب فائض المخزون = الكمية * نسبة الفائض %
-    // Excess = Quantity * (Percent / 100)
-    // Round result to integer
     const quantity = item['الكمية'];
     const excessValue = multiply(quantity, excessPercentAndSign / 100);
     item['فائض المخزون'] = roundToInteger(excessValue);
 
-    // حساب قيمة فائض المخزون = الافرادي * فائض المخزون
     const unitPrice = roundToInteger(item['الافرادي'] || 0);
     item['قيمة فائض المخزون'] = multiply(unitPrice, item['فائض المخزون']);
 
-    // حساب كمية المبيعات = نسبة المبيعات من تقرير الفائض * الكمية
-    // Sales Quantity = Sales Percentage from Excess Report * Quantity
+    // already named 'كمية المبيعات'
     const salesPercentStr = excessItem['نسبة المبيعات'] || '0%';
     const salesPercent = parseFloat(salesPercentStr) || 0;
     const salesQuantity = multiply(quantity, salesPercent / 100);
@@ -133,21 +130,21 @@ function calculateAdditionalFields(item, excessInventoryMap) {
   // حساب معد للارجاع والاحتياج بناءً على فائض المخزون المحسوب
   const excessVal = item['فائض المخزون'];
 
-  // معد للارجاع
-  if (compare(excessVal, 0) > 0) {
-    item['معد للارجاع'] = roundToInteger(excessVal);
-    // حساب قيمة معد للارجاع = الافرادي * معد للارجاع
+  if (conditionStatus === 'معد للارجاع' && compare(item['معد للارجاع'], item['الكمية']) < 0) {
+    item['معد للارجاع'] = roundToInteger(item['الكمية']);
     const unitPrice = roundToInteger(item['الافرادي'] || 0);
     item['قيمة معد للارجاع'] = multiply(unitPrice, item['معد للارجاع']);
-  } else {
+  } else if (compare(excessVal, 0) > 0) {
+    item['معد للارجاع'] = roundToInteger(excessVal);
+    const unitPrice = roundToInteger(item['الافرادي'] || 0);
+    item['قيمة معد للارجاع'] = multiply(unitPrice, item['معد للارجاع']);
+  } else if (conditionStatus !== 'معد للارجاع') {
     item['معد للارجاع'] = new Decimal(0);
     item['قيمة معد للارجاع'] = new Decimal(0);
   }
 
-  // الاحتياج
   if (compare(excessVal, 0) < 0) {
     item['الاحتياج'] = roundToInteger(excessVal).abs();
-    // حساب قيمة الاحتياج = الافرادي * الاحتياج
     const unitPrice = roundToInteger(item['الافرادي'] || 0);
     item['قيمة الاحتياج'] = multiply(unitPrice, item['الاحتياج']);
   } else {
@@ -155,25 +152,21 @@ function calculateAdditionalFields(item, excessInventoryMap) {
     item['قيمة الاحتياج'] = new Decimal(0);
   }
 
-  // حساب مخزون مثالي وقيمته
-  // مخزون مثالي = الكمية إذا كانت الحالة "جيد" وبيان الصلاحية "بعيد"
-  if (conditionStatus === 'جيد' && validityStatus === 'بعيد') {
-    item['مخزون مثالي'] = roundToInteger(item['الكمية']);
-    // حساب قيمة مخزون مثالي = الافرادي * مخزون مثالي
-    const unitPrice = roundToInteger(item['الافرادي'] || 0);
-    item['قيمة مخزون مثالي'] = multiply(unitPrice, item['مخزون مثالي']);
-  } else {
-    item['مخزون مثالي'] = new Decimal(0);
-    item['قيمة مخزون مثالي'] = new Decimal(0);
-  }
+  // حساب مخزون مثالي وقيمته (LOGIC CORRECTION)
+  const ninetyDaySales = excessItem ? roundToInteger(excessItem['المبيعات'] || 0) : new Decimal(0);
+  item['مخزون مثالي'] = ninetyDaySales;
+  const unitPrice = roundToInteger(item['الافرادي'] || 0);
+  item['قيمة مخزون مثالي'] = multiply(unitPrice, item['مخزون مثالي']);
+
 
   // حساب صنف جديد وقيمته
-  // صنف جديد = الكمية إذا كانت الحالة "صنف جديد"
+  item['صنف جديد'] = new Decimal(0);
+  item['قيمة صنف جديد'] = new Decimal(0);
+
   if (conditionStatus === 'صنف جديد') {
     item['صنف جديد'] = roundToInteger(item['الكمية']);
-    // حساب قيمة صنف جديد = الافرادي * صنف جديد
-    const unitPrice = roundToInteger(item['الافرادي'] || 0);
-    item['قيمة صنف جديد'] = multiply(unitPrice, item['صنف جديد']);
+    const unitPriceNew = roundToInteger(item['الافرادي'] || 0);
+    item['قيمة صنف جديد'] = multiply(unitPriceNew, item['صنف جديد']);
   } else {
     item['صنف جديد'] = new Decimal(0);
     item['قيمة صنف جديد'] = new Decimal(0);
@@ -224,19 +217,20 @@ function splitRecord(record, splitQuantity) {
   return { firstRecord, secondRecord };
 }
 
-export const calculateEndingInventory = (netPurchasesListInput, physicalInventoryListInput, excessInventoryData) => {
+export const calculateEndingInventory = async (netPurchasesListInput, physicalInventoryListInput, excessInventoryData) => {
   const startTime = performance.now();
   const physicalCount = physicalInventoryListInput?.length || 0;
   console.log(`🚀 [EndingInventory] معالجة: ${physicalCount} سجل جرد فعلي`);
 
   // 1. إعداد البيانات المصدر (إنشاء نسخ للتعديل)
   // استخدام القائمة المدمجة (A+D) مباشرة
-  let netPurchasesList = netPurchasesListInput.map(p => ({
-    ...p,
-    'كمية الجرد': new Decimal(0),
-    'ملاحظات': 'مخزون دفتري', // الافتراضي هو دفتري
-    'رقم السجل': null,
-  }));
+  const netPurchasesList = netPurchasesListInput;
+  for (let i = 0; i < netPurchasesList.length; i++) {
+    const p = netPurchasesList[i];
+    p['كمية الجرد'] = new Decimal(0);
+    p['ملاحظات'] = 'مخزون دفتري';
+    p['رقم السجل'] = null;
+  }
 
   let physicalInventoryList = physicalInventoryListInput.map(p => ({ ...p }));
 
@@ -271,6 +265,11 @@ export const calculateEndingInventory = (netPurchasesListInput, physicalInventor
   const progressInterval = Math.max(1, Math.floor(physicalInventoryList.length * 0.1));
 
   for (let idx = 0; idx < physicalInventoryList.length; idx++) {
+    // Yield every 500 records
+    if (idx > 0 && idx % 500 === 0) {
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+
     const physicalRecord = physicalInventoryList[idx];
     let remainingPhysicalQty = roundToDecimalPlaces(physicalRecord['الكمية'], 2);
     let physicalRecordRef = physicalRecord; // مرجع للسجل الاصلي
@@ -447,19 +446,29 @@ export const calculateEndingInventory = (netPurchasesListInput, physicalInventor
   }
 
   // 6. حساب الاعمدة الإضافية للقائمة النهائية
-  endingInventoryList.forEach(item => calculateAdditionalFields(item, excessInventoryMap));
+  const todayForCalc = new Date();
+  todayForCalc.setHours(0, 0, 0, 0);
+
+  // معالجة الأعمدة الإضافية على دفعات لاحترام موارد الواجهة
+  for (let i = 0; i < endingInventoryList.length; i++) {
+    if (i > 0 && i % 1000 === 0) {
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+    calculateAdditionalFields(endingInventoryList[i], excessInventoryMap, todayForCalc);
+  }
 
   // 7. فرز القائمة النهائية حسب رمز المادة ثم تاريخ الصلاحية
-  const finalList = endingInventoryList;
-  finalList.sort((a, b) => {
-    if (a['رمز المادة'] !== b['رمز المادة']) {
-      return a['رمز المادة'].localeCompare(b['رمز المادة']);
-    }
-    return new Date(a['تاريخ الصلاحية']) - new Date(b['تاريخ الصلاحية']);
+  endingInventoryList.sort((a, b) => {
+    const codeCompare = a['رمز المادة'].localeCompare(b['رمز المادة']);
+    if (codeCompare !== 0) return codeCompare;
+
+    const d1 = a['تاريخ الصلاحية'] ? new Date(a['تاريخ الصلاحية']).getTime() : 0;
+    const d2 = b['تاريخ الصلاحية'] ? new Date(b['تاريخ الصلاحية']).getTime() : 0;
+    return d1 - d2;
   });
 
   // 8. تحديث الارقام التسلسلية النهائية
-  finalList.forEach((item, index) => {
+  endingInventoryList.forEach((item, index) => {
     item['م'] = index + 1;
     // الحفاظ على رقم السجل كمرجع للمطابقة
     if (!item['رقم السجل']) {
@@ -474,11 +483,13 @@ export const calculateEndingInventory = (netPurchasesListInput, physicalInventor
   const totalTime = performance.now() - startTime;
   console.log(`✅ [EndingInventory] مكتمل:`);
   console.log(`   ⏱️  ${totalTime.toFixed(0)}ms`);
-  console.log(`   📊 ${finalList.length} مخزون نهائي`);
+  console.log(`   📊 ${endingInventoryList.length} مخزون نهائي`);
 
   // إرجاع القوائم النهائية
+  // listB is used by reports as the 'book' side (remaining purchases not matched to physical inventory)
   return {
-    endingInventoryList: finalList,
+    endingInventoryList: endingInventoryList,
+    listB: updatedNetPurchasesList,
     updatedNetPurchasesList: updatedNetPurchasesList,
   };
 };

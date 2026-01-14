@@ -120,6 +120,27 @@ export const savePaginationSettings = (reportKey, pagination) => {
   saveViewSettings(reportKey, settings);
 };
 
+/**
+ * Get density (size) settings
+ * @param {string} reportKey - Unique identifier for the report
+ * @returns {string} Density setting ('small', 'middle', 'default')
+ */
+export const getDensitySettings = (reportKey) => {
+  const settings = getViewSettings(reportKey);
+  return settings.density || 'middle';
+};
+
+/**
+ * Save density settings
+ * @param {string} reportKey - Unique identifier for the report
+ * @param {string} density - Density setting
+ */
+export const saveDensitySettings = (reportKey, density) => {
+  const settings = getViewSettings(reportKey);
+  settings.density = density;
+  saveViewSettings(reportKey, settings);
+};
+
 export default {
   getViewSettings,
   saveViewSettings,
@@ -130,5 +151,7 @@ export default {
   getSortOrder,
   saveSortOrder,
   getPaginationSettings,
-  savePaginationSettings
+  savePaginationSettings,
+  getDensitySettings,
+  saveDensitySettings
 };

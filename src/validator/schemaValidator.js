@@ -8,7 +8,7 @@ const TABLE_SCHEMAS = {
   // Purchases table schema (ورقة مشتريات)
   purchases: {
     requiredColumns: [
-      'م', 'رمز المادة', 'اسم المادة', 'الوحدة', 'الكمية', 
+      'م', 'رمز المادة', 'اسم المادة', 'الوحدة', 'الكمية',
       'الافرادي', 'تاريخ الصلاحية', 'المورد', 'تاريخ العملية', 'نوع العملية'
     ],
     columnTypes: {
@@ -28,11 +28,11 @@ const TABLE_SCHEMAS = {
       'نوع العملية': ['مشتريات', 'مرتجع']
     }
   },
-  
+
   // Sales table schema (ورقة مبيعات)
   sales: {
     requiredColumns: [
-      'م', 'رمز المادة', 'اسم المادة', 'الوحدة', 'الكمية', 
+      'م', 'رمز المادة', 'اسم المادة', 'الوحدة', 'الكمية',
       'الافرادي', 'تاريخ الصلاحية', 'تاريخ العملية', 'نوع العملية'
     ],
     columnTypes: {
@@ -51,11 +51,11 @@ const TABLE_SCHEMAS = {
       'نوع العملية': ['مبيعات', 'مرتجع']
     }
   },
-  
+
   // Physical Inventory table schema (ورقة المخزون)
   physicalInventory: {
     requiredColumns: [
-      'رمز المادة', 'اسم المادة', 'الوحدة', 'الكمية', 
+      'رمز المادة', 'اسم المادة', 'الوحدة', 'الكمية',
       'تاريخ الصلاحية'
     ],
     columnTypes: {
@@ -67,7 +67,7 @@ const TABLE_SCHEMAS = {
     },
     requiredFields: ['رمز المادة', 'الكمية', 'تاريخ الصلاحية']
   },
-  
+
   // Supplier Balances table schema (ورقة الارصدة)
   supplierbalances: {
     requiredColumns: [
@@ -101,144 +101,97 @@ function validateColumns(data, schema, tableName) {
     errors.push(`بيانات ${tableName} فارغة او غير موجودة`);
     return errors;
   }
-  
+
   const headers = data[0];
   const missingColumns = schema.requiredColumns.filter(col => !headers.includes(col));
-  
+
   if (missingColumns.length > 0) {
     errors.push(`الاعمدة المطلوبة مفقودة في ${tableName}: ${missingColumns.join(', ')}`);
   }
-  
+
   return errors;
 }
 
 /**
- * Validate data types for each column
- * @param {Array} data - The raw data array
- * @param {Object} schema - The schema to validate against
- * @param {string} tableName - Name of the table for error messages
- * @returns {Array} Array of error messages
+ * وظيفة تحقق موحدة وفائقة السرعة تقوم بكل الفحوصات في دورة واحدة
+ * @param {Array} data - البيانات
+ * @param {Object} schema - المخطط
+ * @param {string} tableName - اسم الجدول
+ * @returns {Array} قائمة الأخطاء (بحد أقصى 100)
  */
-function validateDataTypes(data, schema, tableName) {
+function fastValidateTable(data, schema, tableName) {
   const errors = [];
-  if (!data || data.length < 2) return errors;
-  
+  const maxErrors = 100; // تقييد عدد الأخطاء لمنع تجميد الواجهة
+
+  if (!data || data.length < 1) return [`بيانات ${tableName} مفقودة`];
+
   const headers = data[0];
-  
-  // Validate each row
-  for (let i = 1; i < data.length; i++) {
-    const row = data[i];
-    for (let j = 0; j < headers.length && j < row.length; j++) {
-      const columnName = headers[j];
-      const value = row[j];
-      const expectedType = schema.columnTypes[columnName];
-      
-      if (expectedType && value !== null && value !== undefined && value !== '') {
-        let isValid = true;
-        let errorMessage = '';
-        
-        switch (expectedType) {
-          case 'number':
-            // Check if it's a valid number
-            if (typeof value !== 'number' && isNaN(parseFloat(value))) {
-              isValid = false;
-              errorMessage = `القيمة "${value}" في العمود ${columnName} ليست رقماً صالحاً`;
-            }
-            break;
-            
-          case 'string':
-            // Check if it's a string or can be converted to string
-            if (value === null || value === undefined) {
-              isValid = false;
-              errorMessage = `القيمة في العمود ${columnName} فارغة`;
-            }
-            break;
-            
-          case 'date':
-            // Check if it's a valid date
-            if (!isValidDate(value)) {
-              isValid = false;
-              errorMessage = `القيمة "${value}" في العمود ${columnName} ليست تاريخاً صالحاً`;
-            }
-            break;
-        }
-        
-        if (!isValid) {
-          errors.push(`خطا في صف ${i} لجدول ${tableName}: ${errorMessage}`);
-        }
-      }
-    }
+
+  // 1. فحص الأعمدة المفقودة (مرة واحدة)
+  const missingColumns = schema.requiredColumns.filter(col => !headers.includes(col));
+  if (missingColumns.length > 0) {
+    errors.push(`الاعمدة المطلوبة مفقودة في ${tableName}: ${missingColumns.join(', ')}`);
+    return errors; // توقف إذا كانت الأعمدة مفقودة
   }
-  
-  return errors;
-}
 
-/**
- * Validate required fields are not empty
- * @param {Array} data - The raw data array
- * @param {Object} schema - The schema to validate against
- * @param {string} tableName - Name of the table for error messages
- * @returns {Array} Array of error messages
- */
-function validateRequiredFields(data, schema, tableName) {
-  const errors = [];
-  if (!data || data.length < 2) return errors;
-  
-  const headers = data[0];
+  // تحديد فهارس الحقول المطلوبة والمسموح بها مسبقاً
   const requiredFields = schema.requiredFields || [];
-  
-  // Find indices of required fields
-  const requiredIndices = requiredFields.map(field => headers.indexOf(field));
-  
-  // Validate each row
+  const requiredIndices = requiredFields.map(f => ({ name: f, idx: headers.indexOf(f) }));
+
+  const allowedValues = schema.allowedValues || {};
+  const allowedConstraints = Object.entries(allowedValues).map(([col, values]) => ({
+    name: col,
+    idx: headers.indexOf(col),
+    values
+  }));
+
+  const typeConstraints = Object.entries(schema.columnTypes).map(([col, type]) => ({
+    name: col,
+    idx: headers.indexOf(col),
+    type
+  }));
+
+  // 2. فحص الصفوف (دورة واحدة لكل الصفوف)
   for (let i = 1; i < data.length; i++) {
     const row = data[i];
-    for (let j = 0; j < requiredFields.length; j++) {
-      const fieldIndex = requiredIndices[j];
-      if (fieldIndex !== -1 && fieldIndex < row.length) {
-        const value = row[fieldIndex];
-        if (value === null || value === undefined || value === '' || 
-            (typeof value === 'string' && value.trim() === '')) {
-          errors.push(`الحقل المطلوب "${requiredFields[j]}" فارغ في صف ${i} لجدول ${tableName}`);
-        }
-      }
-    }
-  }
-  
-  return errors;
-}
+    if (errors.length >= maxErrors) break;
 
-/**
- * Validate allowed values for specific columns
- * @param {Array} data - The raw data array
- * @param {Object} schema - The schema to validate against
- * @param {string} tableName - Name of the table for error messages
- * @returns {Array} Array of error messages
- */
-function validateAllowedValues(data, schema, tableName) {
-  const errors = [];
-  if (!data || data.length < 2) return errors;
-  
-  const headers = data[0];
-  const allowedValues = schema.allowedValues || {};
-  
-  // Process each allowed value constraint
-  for (const [columnName, allowed] of Object.entries(allowedValues)) {
-    const columnIndex = headers.indexOf(columnName);
-    if (columnIndex !== -1) {
-      // Validate each row
-      for (let i = 1; i < data.length; i++) {
-        const row = data[i];
-        if (columnIndex < row.length) {
-          const value = row[columnIndex];
-          if (value !== null && value !== undefined && !allowed.includes(value)) {
-            errors.push(`القيمة "${value}" غير مسموحة في العمود ${columnName} لصف ${i} في جدول ${tableName}. القيم المسموحة: ${allowed.join(', ')}`);
-          }
-        }
+    // أ. فحص الحقول المطلوبة
+    for (const req of requiredIndices) {
+      const val = row[req.idx];
+      if (val === null || val === undefined || val === '' || (typeof val === 'string' && val.trim() === '')) {
+        errors.push(`خطأ في صف ${i}: الحقل "${req.name}" مطلوب`);
+        if (errors.length >= maxErrors) break;
       }
     }
+    if (errors.length >= maxErrors) break;
+
+    // ب. فحص الأنواع
+    for (const constraint of typeConstraints) {
+      if (constraint.idx === -1) continue;
+      const val = row[constraint.idx];
+      if (val === null || val === undefined || val === '') continue;
+
+      if (constraint.type === 'number' && isNaN(parseFloat(val))) {
+        errors.push(`خطأ في صف ${i}: القيمة في "${constraint.name}" ليست رقماً`);
+      } else if (constraint.type === 'date' && !isValidDate(val)) {
+        errors.push(`خطأ في صف ${i}: القيمة في "${constraint.name}" ليست تاريخاً صالحاً`);
+      }
+      if (errors.length >= maxErrors) break;
+    }
+    if (errors.length >= maxErrors) break;
+
+    // ج. فحص القيم المسموحة
+    for (const constraint of allowedConstraints) {
+      if (constraint.idx === -1) continue;
+      const val = row[constraint.idx];
+      if (val !== null && val !== undefined && !constraint.values.includes(val)) {
+        errors.push(`خطأ في صف ${i}: القيمة "${val}" في "${constraint.name}" غير مسموحة`);
+      }
+      if (errors.length >= maxErrors) break;
+    }
   }
-  
+
   return errors;
 }
 
@@ -249,10 +202,10 @@ function validateAllowedValues(data, schema, tableName) {
  */
 function isValidDate(value) {
   if (value === null || value === undefined || value === '') return false;
-  
+
   // If it's already a Date object
   if (value instanceof Date && !isNaN(value)) return true;
-  
+
   // Try to parse as date
   const date = new Date(value);
   return !isNaN(date) && date.toString() !== 'Invalid Date';
@@ -264,71 +217,76 @@ function isValidDate(value) {
  * @param {Object} schema - The schema to normalize against
  * @returns {Array} Normalized data
  */
+import safeString from '../utils/safeString.js';
+
+/**
+ * تطبيع البيانات بشكل فعال
+ * @param {Array} data - المصفوفة الخام
+ * @param {Object} schema - المخطط
+ * @returns {Array} البيانات المعدلة
+ */
 function normalizeDataInternal(data, schema) {
   if (!data || data.length < 2) return data;
-  
+
   const headers = data[0];
   const normalizedData = [headers];
-  
-  // Process each row
+
+  // تحسين: تحديد الفهارس والأنواع مسبقاً לתجاوز الـ switch/case أو الـ lookups داخل الحلقة
+  const columnConfigs = headers.map((h, idx) => ({
+    type: schema.columnTypes[h],
+    name: h,
+    idx: idx
+  })).filter(c => c.type); // فقط الأعمدة التي لها تعريف نوع
+
+  // معالجة كل صف
   for (let i = 1; i < data.length; i++) {
     const row = data[i];
-    const normalizedRow = [];
-    
-    for (let j = 0; j < headers.length && j < row.length; j++) {
-      const columnName = headers[j];
-      let value = row[j];
-      const expectedType = schema.columnTypes[columnName];
-      
-      if (expectedType && value !== null && value !== undefined) {
-        switch (expectedType) {
-          case 'number':
-            // Convert to number
-            if (typeof value === 'string') {
-              value = parseFloat(value);
-            }
-            break;
-            
-          case 'string':
-            // Convert to string and trim
-            if (typeof value !== 'string') {
-              value = String(value);
-            }
-            value = value.trim();
-            break;
-            
-          case 'date':
-            // Convert to proper date format
-            // Handle Excel serial numbers (e.g. 46204) by converting
-            // from Excel epoch to JS Date: (serial - 25569) * 86400 * 1000
-            if (typeof value === 'number') {
-              try {
-                const jsDate = new Date((value - 25569) * 86400 * 1000);
-                value = jsDate;
-              } catch (e) {
-                value = new Date(value);
-              }
-            } else if (!(value instanceof Date)) {
-              value = new Date(value);
-            }
+    const normalizedRow = [...row]; // نسخ الصف لتجنب تعديل الأصل مباشرة
 
-            // Format as yyyy-mm-dd when we have a valid Date
-            if (value instanceof Date && !isNaN(value.getTime())) {
-              const year = value.getFullYear();
-              const month = String(value.getMonth() + 1).padStart(2, '0');
-              const day = String(value.getDate()).padStart(2, '0');
-              value = `${year}-${month}-${day}`;
-            }
-            break;
-        }
+    // تنفيذ التعديلات فقط على الأعمدة المعروفة في المخطط
+    for (const config of columnConfigs) {
+      if (config.idx >= row.length) continue;
+
+      let value = row[config.idx];
+      if (value === null || value === undefined) continue;
+
+      switch (config.type) {
+        case 'number':
+          if (typeof value === 'string') {
+            const parsed = parseFloat(value);
+            normalizedRow[config.idx] = isNaN(parsed) ? value : parsed;
+          }
+          break;
+
+        case 'string':
+          if (typeof value !== 'string') {
+            normalizedRow[config.idx] = safeString(value).trim();
+          } else {
+            normalizedRow[config.idx] = value.trim();
+          }
+          break;
+
+        case 'date':
+          let dateObj = value;
+          // تحويل تاريخ إكسل الرقمي
+          if (typeof value === 'number') {
+            dateObj = new Date((value - 25569) * 86400 * 1000);
+          } else if (!(value instanceof Date)) {
+            dateObj = new Date(value);
+          }
+
+          if (dateObj instanceof Date && !isNaN(dateObj.getTime())) {
+            const year = dateObj.getFullYear();
+            const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+            const day = String(dateObj.getDate()).padStart(2, '0');
+            normalizedRow[config.idx] = `${year}-${month}-${day}`;
+          }
+          break;
       }
-      
-      normalizedRow.push(value);
     }
-    
     normalizedData.push(normalizedRow);
   }
-  
+
   return normalizedData;
 }
 
@@ -339,7 +297,7 @@ function normalizeDataInternal(data, schema) {
  */
 export const validateAllTables = (rawData) => {
   console.log('بدء التحقق من صحة جميع الجداول');
-  
+
   // Normalize possible localized sheet names to canonical keys
   const nameAliases = {
     'مشتريات': 'purchases',
@@ -361,7 +319,7 @@ export const validateAllTables = (rawData) => {
   const results = {};
   let allValid = true;
   const allErrors = [];
-  
+
   // Validate each table
   for (const [tableName, schema] of Object.entries(TABLE_SCHEMAS)) {
     const tableData = normalizedRaw[tableName] || rawData[tableName];
@@ -369,9 +327,9 @@ export const validateAllTables = (rawData) => {
       isValid: true,
       errors: []
     };
-    
+
     console.log(`التحقق من صحة جدول ${tableName}`);
-    
+
     // Skip validation if table data doesn't exist
     if (!tableData) {
       tableResults.isValid = false;
@@ -381,28 +339,22 @@ export const validateAllTables = (rawData) => {
       results[tableName] = tableResults;
       continue;
     }
-    
-    // Perform all validations
-    const columnErrors = validateColumns(tableData, schema, tableName);
-    const dataTypeErrors = validateDataTypes(tableData, schema, tableName);
-    const requiredFieldErrors = validateRequiredFields(tableData, schema, tableName);
-    const allowedValueErrors = validateAllowedValues(tableData, schema, tableName);
-    
-    // Collect all errors
-    const tableErrors = [...columnErrors, ...dataTypeErrors, ...requiredFieldErrors, ...allowedValueErrors];
-    
+
+    // Perform fast combined validation
+    const tableErrors = fastValidateTable(tableData, schema, tableName);
+
     if (tableErrors.length > 0) {
       tableResults.isValid = false;
       tableResults.errors = tableErrors;
       allValid = false;
-      allErrors.push(...tableErrors);
+      allErrors.push(...tableErrors.slice(0, 10)); // فقط أضف أول 10 أخطاء من كل جدول للقائمة العامة
     }
-    
+
     results[tableName] = tableResults;
   }
-  
+
   console.log('انتهى التحقق من صحة جميع الجداول', { allValid, allErrors });
-  
+
   return {
     isValid: allValid,
     errors: allErrors,
@@ -422,7 +374,7 @@ export const normalizeData = (rawData, tableName) => {
     console.warn(`مخطط غير معروف لجدول ${tableName}`);
     return rawData;
   }
-  
+
   return normalizeDataInternal(rawData, schema);
 };
 

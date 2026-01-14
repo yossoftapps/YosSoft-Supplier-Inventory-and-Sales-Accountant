@@ -17,6 +17,7 @@
   "exportToExcel": "تصدير إلى Excel",
   "exportCurrentReport": "تصدير التقرير الحالي",
   "exportAllReports": "تصدير جميع التقارير",
+  "selectiveExport": "تصدير محدد",
   "language": "اللغة",
   "arabic": "العربية",
   "english": "الإنجليزية",

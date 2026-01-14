@@ -3,6 +3,7 @@
 
 // Import XLSX library directly using ES6 import (Vite supports this in workers with { type: 'module' })
 import * as XLSX from 'xlsx';
+import safeString from '../utils/safeString.js';
 
 // Memory monitoring utility
 const getMemoryInfo = () => {
@@ -40,7 +41,7 @@ self.addEventListener('message', (event) => {
     if (exportTimeoutId) {
       clearTimeout(exportTimeoutId);
     }
-    
+
     // Reset cancellation flag
     isCancelled = false;
 
@@ -107,7 +108,7 @@ async function handleExportReports(reportsData, filename) {
       message: 'بدء عملية التصدير...',
       progress: 0
     });
-    
+
     // Check initial memory usage
     const initialMemory = getMemoryInfo();
     if (initialMemory && initialMemory.used > initialMemory.limit * 0.7) {
@@ -163,7 +164,7 @@ async function createExcelFileChunked(reportsData) {
         reject(new Error('Export cancelled'));
         return;
       }
-      
+
       // Create workbook
       const wb = XLSX.utils.book_new();
 
@@ -175,7 +176,7 @@ async function createExcelFileChunked(reportsData) {
       // Track progress
       const reportKeys = Object.keys(reportsData);
       const totalReports = reportKeys.length;
-      
+
       // Process each report with chunked data handling
       reportKeys.forEach((reportKey, index) => {
         // Check for cancellation
@@ -183,9 +184,9 @@ async function createExcelFileChunked(reportsData) {
           reject(new Error('Export cancelled'));
           return;
         }
-        
+
         const report = reportsData[reportKey];
-        
+
         // Skip if no data
         if (!report || !report.data || !Array.isArray(report.data) || report.data.length === 0) {
           return;
@@ -202,25 +203,25 @@ async function createExcelFileChunked(reportsData) {
         // For large datasets, process in chunks to avoid memory issues
         const BASE_CHUNK_SIZE = 5000; // Base chunk size
         const totalRows = report.data.length;
-        
+
         // Adjust chunk size based on memory availability
         let CHUNK_SIZE = BASE_CHUNK_SIZE;
         const memoryInfo = getMemoryInfo();
         if (memoryInfo && memoryInfo.used > memoryInfo.limit * 0.6) { // If memory usage > 60%
           CHUNK_SIZE = Math.max(1000, Math.floor(BASE_CHUNK_SIZE * 0.5)); // Reduce chunk size
         }
-        
+
         if (totalRows > CHUNK_SIZE) {
           // Process large dataset in chunks with streaming approach
           let allExportData = [];
-          
+
           for (let i = 0; i < totalRows; i += CHUNK_SIZE) {
             // Check for cancellation
             if (isCancelled) {
               reject(new Error('Export cancelled'));
               return;
             }
-            
+
             // Check memory usage periodically
             if (i % (CHUNK_SIZE * 2) === 0) {
               if (isMemoryUsageHigh()) {
@@ -229,7 +230,7 @@ async function createExcelFileChunked(reportsData) {
                   message: `تحذير: استخدام الذاكرة مرتفع. قد تستغرق العملية وقتًا أطول...`,
                   progress: Math.min(Math.round((i / totalRows) * 10) + progress, progress + 10)
                 });
-                
+
                 // If memory is critically high, flush data early
                 if (isMemoryUsageHigh() && allExportData.length > CHUNK_SIZE) {
                   self.postMessage({
@@ -240,7 +241,7 @@ async function createExcelFileChunked(reportsData) {
                 }
               }
             }
-            
+
             const chunk = report.data.slice(i, i + CHUNK_SIZE);
             const exportChunk = chunk.map(row => {
               const exportRow = {};
@@ -255,9 +256,9 @@ async function createExcelFileChunked(reportsData) {
               }
               return exportRow;
             });
-            
+
             allExportData.push(...exportChunk);
-            
+
             // For extremely large datasets, create worksheet in chunks to reduce memory pressure
             if (allExportData.length > CHUNK_SIZE * 3) { // If we have 3 chunks worth of data
               self.postMessage({
@@ -266,7 +267,7 @@ async function createExcelFileChunked(reportsData) {
                 progress: Math.min(Math.round((i / totalRows) * 10) + progress, progress + 10)
               });
             }
-            
+
             // Send progress update for chunk processing
             const chunkProgress = Math.round((i / totalRows) * 10) + progress; // Add 10% for chunk processing
             self.postMessage({
@@ -274,20 +275,31 @@ async function createExcelFileChunked(reportsData) {
               message: `جارٍ معالجة البيانات: ${Math.min(i + CHUNK_SIZE, totalRows)}/${totalRows}...`,
               progress: Math.min(chunkProgress, progress + 10)
             });
-            
+
             // Force garbage collection hint if available (Chrome only)
             if (self.gc) {
               self.gc();
             }
           }
-          
-          // Create worksheet from all data
+
+          // Create worksheet from data
           const ws = XLSX.utils.json_to_sheet(allExportData);
-          
+
+          // Add column width calculation
+          const colWidths = {};
+          allExportData.forEach(row => {
+            Object.keys(row).forEach(key => {
+              const val = row[key] ? safeString(row[key]) : '';
+              const len = (val.match(/[^\x00-\xff]/g) || []).length * 2 + val.replace(/[^\x00-\xff]/g, '').length;
+              colWidths[key] = Math.max(colWidths[key] || 0, len, key.length);
+            });
+          });
+          ws['!cols'] = Object.keys(colWidths).map(key => ({ wch: colWidths[key] + 2 }));
+
           // Add worksheet to workbook with appropriate sheet name
           const sheetName = report.sheetName ? report.sheetName.substring(0, 31) : `Sheet${index + 1}`;
           XLSX.utils.book_append_sheet(wb, ws, sheetName);
-          
+
           // Clear array to free memory immediately
           allExportData.length = 0;
           allExportData = null;
@@ -310,10 +322,69 @@ async function createExcelFileChunked(reportsData) {
           // Create worksheet
           const ws = XLSX.utils.json_to_sheet(exportData);
 
+          // Apply cell formatting if supported (mostly for numbers)
+          const range = XLSX.utils.decode_range(ws['!ref']);
+          for (let R = range.s.r + 1; R <= range.e.r; ++R) { // Skip header row
+            for (let C = range.s.c; C <= range.e.c; ++C) {
+              const cell_address = { c: C, r: R };
+              const cell_ref = XLSX.utils.encode_cell(cell_address);
+              const cell = ws[cell_ref];
+
+              if (cell && cell.t === 'n') { // If number
+                // Get column title to determine format
+                const colTitle = Object.keys(exportData[0])[C];
+
+                // Simple heuristics for formatting based on standard column names
+                if (colTitle && (
+                  colTitle.includes('قيمة') ||
+                  colTitle.includes('سعر') ||
+                  colTitle.includes('إجمالي') ||
+                  colTitle.includes('تكلفة') ||
+                  colTitle.includes('مدين') ||
+                  colTitle.includes('دائن') ||
+                  colTitle.includes('رصيد')
+                )) {
+                  cell.z = '#,##0.00'; // Currency format
+                } else if (colTitle && (
+                  colTitle.includes('نسبة') ||
+                  colTitle.includes('%')
+                )) {
+                  cell.z = '0.00%'; // Percentage format
+                } else if (colTitle && (
+                  colTitle.includes('كمية') ||
+                  colTitle.includes('عدد') ||
+                  colTitle === 'م'
+                )) {
+                  cell.z = '#,##0'; // Integer/Quantity format
+                }
+              }
+            }
+          }
+
+          // Add column width calculation
+          const colWidths = {};
+
+          // First pass: headers
+          Object.keys(exportData[0] || {}).forEach(key => {
+            colWidths[key] = key.length * 2; // Initial width based on header
+          });
+
+          // Second pass: data
+          exportData.forEach(row => {
+            Object.keys(row).forEach(key => {
+              const val = row[key] ? safeString(row[key]) : '';
+              // Better width estimation for Arabic
+              const len = (val.match(/[\u0600-\u06FF]/g) || []).length * 1.5 + (val.length - (val.match(/[\u0600-\u06FF]/g) || []).length);
+              colWidths[key] = Math.max(colWidths[key] || 0, len);
+            });
+          });
+
+          ws['!cols'] = Object.keys(colWidths).map(key => ({ wch: Math.min(colWidths[key] + 5, 50) })); // Max 50 char width
+
           // Add worksheet to workbook with appropriate sheet name
           const sheetName = report.sheetName ? report.sheetName.substring(0, 31) : `Sheet${index + 1}`;
           XLSX.utils.book_append_sheet(wb, ws, sheetName);
-          
+
           // Clear array to free memory immediately
           exportData.length = 0;
         }
@@ -333,7 +404,7 @@ async function createExcelFileChunked(reportsData) {
 
       // Generate Excel file blob with reduced memory footprint
       const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'binary', compression: true });
-      
+
       // Send progress for file creation
       self.postMessage({
         type: 'PROGRESS',
@@ -345,23 +416,23 @@ async function createExcelFileChunked(reportsData) {
       const buf = new ArrayBuffer(wbout.length);
       const view = new Uint8Array(buf);
       const CHUNK_PROCESS_SIZE = 100000; // Process 100KB at a time
-      
+
       for (let i = 0; i < wbout.length; i += CHUNK_PROCESS_SIZE) {
         const end = Math.min(i + CHUNK_PROCESS_SIZE, wbout.length);
         for (let j = i; j < end; j++) {
           view[j] = wbout.charCodeAt(j) & 0xFF;
         }
-        
+
         // Check for cancellation during file creation
         if (isCancelled) {
           reject(new Error('Export cancelled during file creation'));
           return;
         }
       }
-      
+
       // Create blob
       const blob = new Blob([buf], { type: 'application/octet-stream' });
-      
+
       resolve(blob);
     } catch (error) {
       reject(new Error(`Create Excel file error: ${error.message}`));

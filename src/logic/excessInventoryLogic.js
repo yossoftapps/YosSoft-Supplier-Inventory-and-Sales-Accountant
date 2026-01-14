@@ -15,19 +15,9 @@ import {
     Decimal
 } from '../utils/financialCalculations.js';
 
-const convertToObjects = (data) => {
-    if (!data || data.length < 2) return [];
-    const headers = data[0];
-    return data.slice(1).map(row => {
-        const obj = {};
-        headers.forEach((header, index) => {
-            obj[header] = row[index];
-        });
-        return obj;
-    });
-};
+import { convertToObjects } from '../utils/dataUtils.js';
 
-export const calculateExcessInventory = (physicalInventoryRaw, salesRaw, netPurchasesList, netSalesList) => {
+export const calculateExcessInventory = async (physicalInventoryRaw, salesRaw, netPurchasesList, netSalesList) => {
     const startTime = performance.now();
 
     const physicalInventory = convertToObjects(physicalInventoryRaw);
@@ -62,10 +52,18 @@ export const calculateExcessInventory = (physicalInventoryRaw, salesRaw, netPurc
     ninetyDaysAgo.setHours(0, 0, 0, 0);
 
     const salesMap = new Map();
-    for (const sale of allSales) {
+    const ninetyDaysVal = ninetyDaysAgo.getTime();
+
+    for (let i = 0; i < allSales.length; i++) {
+        // Yield every 2000 records
+        if (i > 0 && i % 2000 === 0) {
+            await new Promise(resolve => setTimeout(resolve, 0));
+        }
+
+        const sale = allSales[i];
         if (sale['نوع العملية'] === 'مبيعات') {
-            const saleDate = new Date(sale['تاريخ العملية']);
-            if (saleDate >= ninetyDaysAgo) {
+            const saleDateVal = new Date(sale['تاريخ العملية']).getTime();
+            if (saleDateVal >= ninetyDaysVal) {
                 const code = sale['رمز المادة'];
                 const quantity = roundToDecimalPlaces(sale['الكمية'] || 0, 2);
                 const currentValue = salesMap.get(code) || new Decimal(0);
@@ -107,12 +105,12 @@ export const calculateExcessInventory = (physicalInventoryRaw, salesRaw, netPurc
         let statusText = '';
         if (compare(totalSales, 0) === 0 && compare(totalQuantity, 0) > 0) {
             statusText = 'راكد تماما';
-        } else if (compare(excess, 0) < 0) {
+        } else if (compare(excess, -1) < 0) { // Logic Correction: Use > 1 and < -1
             statusText = 'احتياج';
-        } else if (compare(excess, 0) > 0) {
+        } else if (compare(excess, 1) > 0) { // Logic Correction: Use > 1 and < -1
             statusText = 'مخزون زائد';
         } else {
-            statusText = 'مناسب';
+            statusText = 'مثالي'; // Logic Correction: Use 'مثالي' instead of 'مناسب'
         }
 
         // حساب نسبة الفائض (Excess Percentage)
@@ -127,33 +125,32 @@ export const calculateExcessInventory = (physicalInventoryRaw, salesRaw, netPurc
             }
         }
 
-        // حساب نسبة المبيعات (Sales Percentage)
+        // حساب نسبة المبيعات (Sales Percentage) - LOGIC FIX
         let salesPercentage = 0;
-        if (compare(totalPurchases, 0) === 0) {
-            salesPercentage = 100;
-        } else {
-            try {
-                const ratio = totalNetSales.div(totalPurchases);
+        if (compare(totalQuantity, 0) > 0) {
+             try {
+                // Correct formula: Sales (90 days) / Quantity
+                const ratio = totalSales.div(totalQuantity);
                 salesPercentage = roundToInteger(multiply(ratio, 100)).toNumber();
             } catch (e) {
                 salesPercentage = 0;
             }
+        } else if (compare(totalSales, 0) > 0) {
+            salesPercentage = 100; // As per logic doc if quantity is 0 but sales exist
         }
 
-        // حساب معد للارجاع
-        let preparedForReturn = new Decimal(0);
+
+        // حساب مخزون زائد
+        let excessQuantity = new Decimal(0);
         if (compare(excess, 0) > 0) {
-            preparedForReturn = roundToInteger(excess);
+            excessQuantity = roundToInteger(excess);
         }
 
         // حساب الاحتياج
         let needQuantity = new Decimal(0);
         if (compare(excess, 0) < 0) {
-            // Excess is negative (e.g., -5.2). Round to -5. Abs is 5.
-            // Or Round(-5.2) -> -5. Abs(-5) -> 5.
             needQuantity = roundToInteger(excess).abs();
         }
-
         excessInventoryReport.push({
             ...inventoryItem,
             'كمية المشتريات': totalPurchases,
@@ -162,16 +159,29 @@ export const calculateExcessInventory = (physicalInventoryRaw, salesRaw, netPurc
             'المبيعات': totalSales,
             'فائض المخزون': excess,
             'نسبة الفائض': excessPercentage + '%',
-            'معد للارجاع': preparedForReturn,
+            'مخزون زائد': excessQuantity, // Column Rename: 'معد للارجاع' to 'مخزون زائد'
             'الاحتياج': needQuantity,
             'بيان الفائض': statusText,
         });
     }
 
+    // إسناد الأرقام التسلسلية (م) للتقرير وتحويل Decimal إلى أرقام
+    const finalReport = excessInventoryReport.map((item, index) => ({
+        ...item,
+        'م': index + 1,
+        'الكمية': item['الكمية'].toNumber(),
+        'كمية المشتريات': item['كمية المشتريات'].toNumber(),
+        'كمية المبيعات': item['كمية المبيعات'].toNumber(),
+        'المبيعات': item['المبيعات'].toNumber(),
+        'فائض المخزون': item['فائض المخزون'].toNumber(),
+        'مخزون زائد': item['مخزون زائد'].toNumber(),
+        'الاحتياج': item['الاحتياج'].toNumber()
+    }));
+
     const totalTime = performance.now() - startTime;
     console.log(`✅ [ExcessInventory] مكتمل:`);
     console.log(`   ⏱️  ${totalTime.toFixed(0)}ms`);
-    console.log(`   📊 ${excessInventoryReport.length} مادة`);
+    console.log(`   📊 ${finalReport.length} مادة`);
 
-    return excessInventoryReport;
+    return finalReport;
 };

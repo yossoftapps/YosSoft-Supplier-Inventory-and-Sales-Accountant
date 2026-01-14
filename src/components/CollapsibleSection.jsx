@@ -1,31 +1,21 @@
-import React, { useState } from 'react';
-import { DownOutlined, RightOutlined } from '@ant-design/icons';
+import React from 'react';
 import '../assets/styles/unified-styles.css';
 
 const CollapsibleSection = ({
   title,
   children,
-  defaultCollapsed = false,
+  defaultCollapsed = false, // Ignored now
   className = '',
   ...restProps
 }) => {
-  const [collapsed, setCollapsed] = useState(defaultCollapsed);
-
-  const toggleCollapse = () => {
-    setCollapsed(!collapsed);
-  };
-
   return (
     <div className={`collapsible-section ${className}`} {...restProps}>
-      <div className="collapsible-header" onClick={toggleCollapse}>
+      <div className="collapsible-header" style={{ cursor: 'default' }}>
         <span>{title}</span>
-        {collapsed ? <RightOutlined /> : <DownOutlined />}
       </div>
-      {!collapsed && (
-        <div className="collapsible-content">
-          {children}
-        </div>
-      )}
+      <div className="collapsible-content">
+        {children}
+      </div>
     </div>
   );
 };

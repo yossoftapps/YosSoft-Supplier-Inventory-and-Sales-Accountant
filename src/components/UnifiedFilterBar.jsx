@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Input, Select, Button, Row, Col, Space, Tag } from 'antd';
 import { SearchOutlined, ClearOutlined, CloseOutlined } from '@ant-design/icons';
 
@@ -8,40 +8,45 @@ const UnifiedFilterBar = ({
     data = {},
     onFilterChange,
     dataType = 'default',
-    style = { marginBottom: 24, padding: '16px', background: 'rgba(255, 255, 255, 0.6)', borderRadius: '12px', border: '1px solid rgba(255, 255, 255, 0.3)', backdropFilter: 'blur(10px)' }
+    style = { marginBottom: 12, padding: '8px 16px', background: 'rgba(255, 255, 255, 0.6)', borderRadius: '12px', border: '1px solid rgba(255, 255, 255, 0.3)', backdropFilter: 'blur(10px)' }
 }) => {
     const [localFilters, setLocalFilters] = useState({});
 
-    // Get unique values for select fields based on data type
-    const getUniqueValues = (fieldName) => {
-        if (!data) return [];
-
-        let dataList = [];
-        // Data Structure Handling based on page types
-        if (dataType === 'purchases' && data.netPurchasesList) {
-            dataList = [...(data.netPurchasesList || []), ...(data.orphanReturnsList || [])];
-        } else if (dataType === 'sales' && data.netSalesList) {
-            dataList = [...(data.netSalesList || []), ...(data.orphanReturnsList || [])];
-        } else if (data.listE && data.listF) { /* Excess or Physical Inventory variations */
-            dataList = [...(data.listE || []), ...(data.listF || [])];
-        } else if (Array.isArray(data)) {
-            dataList = data;
-        } else {
-            // Try to find any array property
-            const arrayProps = Object.values(data).filter(Array.isArray);
-            if (arrayProps.length > 0) {
-                dataList = arrayProps[0];
+    // قيم فريدة محفوظه للحقول المحددة لمنع عمليات إعادة الحساب الباهظة الثمن في كل عرض
+    const uniqueValuesCache = useMemo(() => {
+        const cache = {};
+        const getValues = (fieldName) => {
+            if (!data) return [];
+            let dataList = [];
+            if (dataType === 'purchases' && data.netPurchasesList) {
+                dataList = [...(data.netPurchasesList || []), ...(data.orphanReturnsList || [])];
+            } else if (dataType === 'sales' && data.netSalesList) {
+                dataList = [...(data.netSalesList || []), ...(data.orphanReturnsList || [])];
+            } else if (data.listE && data.listF) {
+                dataList = [...(data.listE || []), ...(data.listF || [])];
+            } else if (Array.isArray(data)) {
+                dataList = data;
+            } else {
+                const arrayProps = Object.values(data).filter(Array.isArray);
+                if (arrayProps.length > 0) dataList = arrayProps[0];
             }
+            if (!dataList.length) return [];
+            return [...new Set(dataList.map(item => item[fieldName]).filter(Boolean))].slice(0, 100);
+        };
+
+        // حساب الحقول المشتركة مسبقًا بناءً على نوع البيانات
+        if (dataType === 'purchases' || dataType === 'inventory' || dataType === 'endingInventory') {
+            cache.supplier = getValues('المورد');
+        } else if (dataType === 'suppliers') {
+            cache.supplier = getValues('المورد');
+            cache.subAccount = getValues('الحساب المساعد');
         }
-
-        if (!dataList.length) return [];
-
-        const uniqueValues = [...new Set(dataList.map(item => item[fieldName]).filter(Boolean))];
-        return uniqueValues.slice(0, 100); // Limit to 100 options for performance
-    };
+        return cache;
+    }, [data, dataType]);
 
     const handleFilterChange = (field, value) => {
         const newFilters = { ...localFilters, [field]: value };
+
         setLocalFilters(newFilters);
         onFilterChange && onFilterChange(newFilters);
     };
@@ -51,7 +56,6 @@ const UnifiedFilterBar = ({
         onFilterChange && onFilterChange({});
     };
 
-    // Remove a specific filter
     const removeFilter = (field) => {
         const newFilters = { ...localFilters };
         delete newFilters[field];
@@ -59,27 +63,37 @@ const UnifiedFilterBar = ({
         onFilterChange && onFilterChange(newFilters);
     };
 
-    // Get filter fields based on data type
-    const getFilterFields = () => {
+    const getFieldSpan = (key) => {
+        const spans = {
+            'materialCode': 3,
+            'materialName': 11,
+            'supplier': 5,
+            'abcClassification': 4,
+            'accountCode': 4,
+            'subAccount': 4
+        };
+        return spans[key] || 4;
+    };
+
+    // حفظ تكوين حقول التصفية
+    const filterFields = useMemo(() => {
         switch (dataType) {
             case 'purchases':
                 return [
                     { key: 'materialCode', label: 'رمز المادة', type: 'text' },
                     { key: 'materialName', label: 'اسم المادة', type: 'text' },
-                    { key: 'supplier', label: 'المورد', type: 'select', options: getUniqueValues('المورد') },
-                    { key: 'unit', label: 'الوحدة', type: 'select', options: getUniqueValues('الوحدة') }
+                    { key: 'supplier', label: 'المورد', type: 'select', options: uniqueValuesCache.supplier || [] }
                 ];
             case 'sales':
                 return [
                     { key: 'materialCode', label: 'رمز المادة', type: 'text' },
-                    { key: 'materialName', label: 'اسم المادة', type: 'text' },
-                    { key: 'unit', label: 'الوحدة', type: 'select', options: getUniqueValues('الوحدة') }
+                    { key: 'materialName', label: 'اسم المادة', type: 'text' }
                 ];
             case 'suppliers':
                 return [
-                    { key: 'supplier', label: 'المورد', type: 'select', options: getUniqueValues('المورد') },
+                    { key: 'supplier', label: 'المورد', type: 'select', options: uniqueValuesCache.supplier || [] },
                     { key: 'accountCode', label: 'رمز الحساب', type: 'text' },
-                    { key: 'subAccount', label: 'الحساب المساعد', type: 'select', options: getUniqueValues('الحساب المساعد') }
+                    { key: 'subAccount', label: 'الحساب المساعد', type: 'select', options: uniqueValuesCache.subAccount || [] }
                 ];
             case 'inventoryABC':
                 return [
@@ -92,8 +106,7 @@ const UnifiedFilterBar = ({
                 return [
                     { key: 'materialCode', label: 'رمز المادة', type: 'text' },
                     { key: 'materialName', label: 'اسم المادة', type: 'text' },
-                    { key: 'supplier', label: 'المورد', type: 'select', options: getUniqueValues('المورد') },
-                    { key: 'unit', label: 'الوحدة', type: 'select', options: getUniqueValues('الوحدة') }
+                    { key: 'supplier', label: 'المورد', type: 'select', options: uniqueValuesCache.supplier || [] }
                 ];
             default:
                 return [
@@ -101,12 +114,10 @@ const UnifiedFilterBar = ({
                     { key: 'materialName', label: 'اسم المادة', type: 'text' }
                 ];
         }
-    };
+    }, [dataType, uniqueValuesCache]);
 
-    const filterFields = getFilterFields();
-
-    // Get active filters as tags
-    const getActiveFilters = () => {
+    // حفظ علامات المرشحات النشطة
+    const activeFilters = useMemo(() => {
         return Object.entries(localFilters)
             .filter(([key, value]) => value !== undefined && value !== null && value !== '')
             .map(([key, value]) => {
@@ -114,27 +125,28 @@ const UnifiedFilterBar = ({
                 const label = field ? field.label : key;
                 return { key, label, value };
             });
-    };
-
-    const activeFilters = getActiveFilters();
+    }, [localFilters, filterFields]);
 
     return (
-        <div style={style} className="unified-filter-bar">
-            <Row gutter={[16, 16]} align="middle">
+        <div style={{ ...style, width: '100%', maxWidth: 'none' }} className="unified-filter-bar">
+            <Row gutter={[12, 12]} align="middle" style={{ width: '100%', margin: 0 }}>
                 {/* Smart Search Field */}
-                <Col xs={24} md={8}>
+                <Col xs={24} lg={5}>
                     <Input
-                        placeholder="بحث ذكي في كل الحقول..."
+                        placeholder="بحث ذكي شامل..."
                         value={localFilters['smartSearch']}
-                        onChange={(e) => handleFilterChange('smartSearch', e.target.value)}
+                        onChange={(e) => {
+                            // Apply smart search across all text fields
+                            handleFilterChange('smartSearch', e.target.value);
+                        }}
                         prefix={<SearchOutlined style={{ color: '#2563eb', fontSize: '18px' }} />}
                         className="unified-input"
-                        style={{ borderRadius: '24px', boxShadow: '0 2px 5px rgba(0,0,0,0.05)' }}
+                        style={{ borderRadius: '24px', width: '100%' }}
                         allowClear
                     />
                 </Col>
                 {filterFields.map(field => (
-                    <Col key={field.key} xs={24} sm={12} md={6}>
+                    <Col key={field.key} xs={24} sm={12} lg={getFieldSpan(field.key)}>
                         {field.type === 'select' ? (
                             <Select
                                 showSearch
@@ -157,24 +169,15 @@ const UnifiedFilterBar = ({
                                 onChange={(e) => handleFilterChange(field.key, e.target.value)}
                                 prefix={<SearchOutlined style={{ color: '#1890ff' }} />}
                                 className="unified-input"
+                                style={{ width: '100%' }}
                                 allowClear
                             />
                         )}
                     </Col>
                 ))}
-                <Col xs={24} sm={12} md={6}>
-                    <Space>
-                        <Button
-                            icon={<ClearOutlined />}
-                            onClick={clearFilters}
-                            className="unified-button-secondary"
-                        >
-                            مسح الفلاتر
-                        </Button>
-                    </Space>
-                </Col>
+
             </Row>
-            
+
             {/* Active Filters Tags */}
             {activeFilters.length > 0 && (
                 <div style={{ marginTop: '16px', display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
@@ -184,9 +187,9 @@ const UnifiedFilterBar = ({
                             closable
                             onClose={() => removeFilter(filter.key)}
                             closeIcon={<CloseOutlined />}
-                            style={{ 
-                                backgroundColor: '#eef4ff', 
-                                borderColor: '#d0ddf7', 
+                            style={{
+                                backgroundColor: '#eef4ff',
+                                borderColor: '#d0ddf7',
                                 color: '#2563eb',
                                 fontWeight: 500,
                                 fontSize: '13px',

@@ -1,5 +1,5 @@
-﻿// Utility module for precise financial calculations using Decimal.js
-// Implements the rounding policies specified in the project specifications
+﻿// وحدة للحسابات المالية الدقيقة باستخدام Decimal.js
+// تنفيذ سياسات التقريب المحددة في مواصفات المشروع
 
 import Decimal from 'decimal.js';
 
@@ -12,10 +12,10 @@ Decimal.set({
 });
 
 /**
- * Round a decimal value to a specified number of decimal places
- * @param {number|string|Decimal} value - The value to round
- * @param {number} decimals - Number of decimal places (default: 2 for quantities, 0 for monetary amounts)
- * @returns {Decimal} Rounded decimal value
+ * تقريب قيمة عشرية إلى عدد محدد من المنازل العشرية
+ * @param {number|string|Decimal} value - القيمة التي سيتم تقريبها
+ * @param {number} decimals - عدد المنازل العشرية (الافتراضي: 2 للكميات، 0 للمبالغ المالية)
+ * @returns {Decimal} قيمة عشرية مقربة
  */
 export const roundToDecimalPlaces = (value, decimals = 2) => {
   // Handle undefined or null values
@@ -27,10 +27,10 @@ export const roundToDecimalPlaces = (value, decimals = 2) => {
 };
 
 /**
- * Round a monetary amount to nearest integer (no decimal places)
- * As specified in the requirements: monetary amounts should be integers
- * @param {number|string|Decimal} value - The monetary value to round
- * @returns {Decimal} Rounded integer value
+ * تقريب مبلغ مالي إلى أقرب عدد صحيح (بدون منازل عشرية)
+ * حسب ما هو محدد في المتطلبات: يجب أن تكون المبالغ المالية أعداد صحيحة
+ * @param {number|string|Decimal} value - القيمة المالية التي سيتم تقريبها
+ * @returns {Decimal} قيمة عدد صحيح مقرب
  */
 export const roundToInteger = (value) => {
   // Handle undefined or null values
@@ -42,10 +42,10 @@ export const roundToInteger = (value) => {
 };
 
 /**
- * Format a quantity value to exactly 2 decimal places (00.00 format)
- * As specified in the requirements for quantity display
- * @param {number|string|Decimal} value - The quantity value to format
- * @returns {string} Formatted string with exactly 2 decimal places
+ * تنسيق قيمة كمية إلى منزلتين عشريتين بالضبط (تنسيق 00.00)
+ * حسب ما هو محدد في المتطلبات لعرض الكمية
+ * @param {number|string|Decimal} value - قيمة الكمية التي سيتم تنسيقها
+ * @returns {string} سلسلة نصية منسقة بمنزلتين عشريتين بالضبط
  */
 export const formatQuantity = (value) => {
   // Handle undefined or null values
@@ -63,10 +63,10 @@ export const formatQuantity = (value) => {
 };
 
 /**
- * Format a monetary amount as integer with thousands separator
- * As specified in the requirements for monetary display
- * @param {number|string|Decimal} value - The monetary value to format
- * @returns {string} Formatted string as integer with thousands separator
+ * تنسيق مبلغ مالي كعدد صحيح مع فاصل الآلاف
+ * حسب ما هو محدد في المتطلبات لعرض القيمة المالية
+ * @param {number|string|Decimal} value - القيمة المالية التي سيتم تنسيقها
+ * @returns {string} سلسلة نصية منسقة كعدد صحيح مع فاصل الآلاف
  */
 export const formatMoney = (value) => {
   // Handle undefined or null values
@@ -85,10 +85,10 @@ export const formatMoney = (value) => {
 };
 
 /**
- * Parse and validate a quantity value
- * Quantities should be numbers with up to 2 decimal places
- * @param {string|number} value - The value to parse
- * @returns {Decimal|null} Parsed decimal value or null if invalid
+ * تحليل وتحقق من صحة قيمة كمية
+ * يجب أن تكون الكميات أرقامًا بحد أقصى منزلتين عشريتين
+ * @param {string|number} value - القيمة التي سيتم تحليلها
+ * @returns {Decimal|null} قيمة عشرية محللة أو null إذا كانت غير صالحة
  */
 export const parseQuantity = (value) => {
   if (value === null || value === undefined || value === '') {
@@ -105,10 +105,10 @@ export const parseQuantity = (value) => {
 };
 
 /**
- * Parse and validate a monetary value
- * Monetary amounts should be integers (no decimal places)
- * @param {string|number} value - The value to parse
- * @returns {Decimal|null} Parsed integer value or null if invalid
+ * تحليل وتحقق من صحة قيمة مالية
+ * يجب أن تكون المبالغ المالية أعدادًا صحيحة (بدون منازل عشرية)
+ * @param {string|number} value - القيمة التي سيتم تحليلها
+ * @returns {Decimal|null} قيمة عدد صحيح محللة أو null إذا كانت غير صالحة
  */
 export const parseMoney = (value) => {
   if (value === null || value === undefined || value === '') {
@@ -125,10 +125,10 @@ export const parseMoney = (value) => {
 };
 
 /**
- * Multiply two values with precise decimal arithmetic
- * @param {number|string|Decimal} a - First operand
- * @param {number|string|Decimal} b - Second operand
- * @returns {Decimal} Product of a and b
+ * ضرب قيمتين باستخدام الحساب العشري الدقيق
+ * @param {number|string|Decimal} a - المعامل الأول
+ * @param {number|string|Decimal} b - المعامل الثاني
+ * @returns {Decimal} حاصل ضرب a و b
  */
 export const multiply = (a, b) => {
   // Handle undefined or null values
@@ -140,10 +140,10 @@ export const multiply = (a, b) => {
 };
 
 /**
- * Divide two values with precise decimal arithmetic
- * @param {number|string|Decimal} a - Dividend
- * @param {number|string|Decimal} b - Divisor
- * @returns {Decimal} Quotient of a divided by b
+ * قسمة قيمتين باستخدام الحساب العشري الدقيق
+ * @param {number|string|Decimal} a - المقسوم
+ * @param {number|string|Decimal} b - المقسوم عليه
+ * @returns {Decimal} خارج قسمة a على b
  */
 export const divide = (a, b) => {
   // Handle undefined or null values
@@ -158,10 +158,10 @@ export const divide = (a, b) => {
 };
 
 /**
- * Add two values with precise decimal arithmetic
- * @param {number|string|Decimal} a - First operand
- * @param {number|string|Decimal} b - Second operand
- * @returns {Decimal} Sum of a and b
+ * جمع قيمتين باستخدام الحساب العشري الدقيق
+ * @param {number|string|Decimal} a - المعامل الأول
+ * @param {number|string|Decimal} b - المعامل الثاني
+ * @returns {Decimal} مجموع a و b
  */
 export const add = (a, b) => {
   // Handle undefined or null values
@@ -173,10 +173,10 @@ export const add = (a, b) => {
 };
 
 /**
- * Subtract two values with precise decimal arithmetic
- * @param {number|string|Decimal} a - Minuend
- * @param {number|string|Decimal} b - Subtrahend
- * @returns {Decimal} Difference of a minus b
+ * طرح قيمتين باستخدام الحساب العشري الدقيق
+ * @param {number|string|Decimal} a - المطروح منه
+ * @param {number|string|Decimal} b - المطروح
+ * @returns {Decimal} فرق a ناقص b
  */
 export const subtract = (a, b) => {
   // Handle undefined or null values
@@ -188,10 +188,10 @@ export const subtract = (a, b) => {
 };
 
 /**
- * Compare two values
- * @param {number|string|Decimal} a - First value
- * @param {number|string|Decimal} b - Second value
- * @returns {number} -1 if a < b, 0 if a == b, 1 if a > b
+ * مقارنة قيمتين
+ * @param {number|string|Decimal} a - القيمة الأولى
+ * @param {number|string|Decimal} b - القيمة الثانية
+ * @returns {number} -1 إذا كانت a < b، 0 إذا كانت a == b، 1 إذا كانت a > b
  */
 export const compare = (a, b) => {
   // Handle undefined or null values
@@ -203,9 +203,9 @@ export const compare = (a, b) => {
 };
 
 /**
- * Sanitize and parse various number input formats into a Decimal instance
- * Accepts numbers, Decimal instances, and strings with thousand separators
- * or localized digits (Arabic-Indic). Returns a Decimal or throws.
+ * تنقية وتحليل تنسيقات إدخال الأرقام المختلفة إلى مثيل عشري
+ * يقبل الأرقام ومثيلات Decimal والنصوص مع فواصل الآلاف
+ * أو الأرقام المترجمة (الرقم العربي). يعيد قيمة عشرية أو يرمي استثناء.
  */
 const parseToDecimal = (input) => {
   // If already a Decimal instance
@@ -244,21 +244,27 @@ const parseToDecimal = (input) => {
     }
   } else {
     // Normal processing for shorter strings
-    // If the string contains multiple numbers, extract the first valid one
-    const numberMatches = s.match(/[\d.]+/g);
-    if (numberMatches && numberMatches.length > 0) {
-      // Look for the first match that looks like a valid number
-      for (let i = 0; i < numberMatches.length; i++) {
-        const match = numberMatches[i];
-        // Validate that it's a proper number format
-        if (/^\d+(\.\d+)?$/.test(match)) {
-          s = match;
-          break;
+    // For numbers with potential commas (thousands separators or decimal),
+    // we need to handle them differently
+    // First, apply the thousands/decimal separator logic above
+    // This section is only reached if the comma processing above didn't change the string
+    // or if there are no commas in the string
+    if (s.indexOf(',') === -1) {  // Only if no commas remain
+      const numberMatches = s.match(/[\d.]+/g);
+      if (numberMatches && numberMatches.length > 0) {
+        // Look for the first match that looks like a valid number
+        for (let i = 0; i < numberMatches.length; i++) {
+          const match = numberMatches[i];
+          // Validate that it's a proper number format
+          if (/^\d+(\.\d+)?$/.test(match)) {
+            s = match;
+            break;
+          }
         }
-      }
-      // If no valid format found, use the first match
-      if (s === String(input).trim()) {
-        s = numberMatches[0];
+        // If no valid format found, use the first match
+        if (s === String(input).trim()) {
+          s = numberMatches[0];
+        }
       }
     }
   }
@@ -271,10 +277,24 @@ const parseToDecimal = (input) => {
   const commaCount = (s.match(/,/g) || []).length;
   const dotCount = (s.match(/\./g) || []).length;
   if (commaCount > 0 && dotCount === 0) {
-    if (commaCount === 1) {
-      s = s.replace(',', '.'); // likely decimal comma
-    } else {
+    // Check if commas follow thousands separator pattern (every 3 digits from right)
+    // For example: 1,000,000 is valid (3 digits after each comma), 1,2345 is not (4 digits after comma)
+    const parts = s.split(',');
+    let isThousandsSeparator = true;
+    
+    // Check if all parts except the first have exactly 3 digits (as in proper thousands separator)
+    // The first part can have 1-3 digits, subsequent parts should have exactly 3
+    for (let i = 1; i < parts.length; i++) {
+      if (parts[i].length !== 3) {
+        isThousandsSeparator = false;
+        break;
+      }
+    }
+    
+    if (isThousandsSeparator) {
       s = s.replace(/,/g, ''); // remove thousand separators
+    } else {
+      s = s.replace(',', '.'); // treat as decimal separator (for first comma)
     }
   } else {
     s = s.replace(/,/g, ''); // remove commas when dots present
@@ -303,8 +323,8 @@ const parseToDecimal = (input) => {
   return new Decimal(s);
 };
 
-// Serialize data by converting Decimal objects to plain numbers
-// Enhanced to handle complex data types safely and efficiently
+// تسلسل البيانات عن طريق تحويل الكائنات العشرية إلى أرقام بسيطة
+// محسّن للتعامل مع أنواع البيانات المعقدة بشكل آمن وفعال
 export const serializeData = (data, seen = new WeakSet(), depth = 0) => {
   // Prevent deep nesting which can cause performance issues
   if (depth > 100) {
@@ -315,7 +335,13 @@ export const serializeData = (data, seen = new WeakSet(), depth = 0) => {
   if (data === null || data === undefined) return data;
 
   // Handle primitive types
-  if (typeof data !== 'object') return data;
+  if (typeof data !== 'object' && typeof data !== 'function') return data;
+
+  // Handle functions - convert to string representation or null
+  if (typeof data === 'function') {
+    // For Web Worker compatibility, functions must be removed from data
+    return null;
+  }
 
   // Handle Date objects
   if (data instanceof Date) return data.toISOString();

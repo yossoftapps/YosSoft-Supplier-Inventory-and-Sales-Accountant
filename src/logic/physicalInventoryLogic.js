@@ -17,29 +17,7 @@ import {
     Decimal
 } from '../utils/financialCalculations.js';
 
-const convertToObjects = (data) => {
-    if (!data || data.length < 2) return [];
-    const headers = data[0];
-    return data.slice(1).map(row => {
-        const obj = {};
-        headers.forEach((header, index) => {
-            let cell = row[index];
-            if (header === 'تاريخ الصلاحية' && typeof cell === 'number') {
-                try {
-                    const jsDate = new Date((cell - 25569) * 86400 * 1000);
-                    const y = jsDate.getFullYear();
-                    const m = String(jsDate.getMonth() + 1).padStart(2, '0');
-                    const d = String(jsDate.getDate()).padStart(2, '0');
-                    cell = `${y}-${m}-${d}`;
-                } catch (e) {
-                    // fallback
-                }
-            }
-            obj[header] = cell;
-        });
-        return obj;
-    });
-};
+import { convertToObjects } from '../utils/dataUtils.js';
 
 const sortByDate = (data, dateKey, direction = 'asc') => {
     return data.sort((a, b) => {
@@ -49,37 +27,63 @@ const sortByDate = (data, dateKey, direction = 'asc') => {
     });
 };
 
-export const processPhysicalInventory = (physicalInventoryRaw) => {
+export const processPhysicalInventory = async (physicalInventoryRaw, purchasesRaw) => {
     const startTime = performance.now();
     console.log(`🚀 [PhysicalInventory] معالجة: ${physicalInventoryRaw?.length - 1 || 0} سجل`);
+
+    // --- Start of new logic: Create a purchase lookup map ---
+    const purchaseLookup = new Map();
+    if (purchasesRaw && purchasesRaw.length > 1) {
+        const purchases = convertToObjects(purchasesRaw);
+        purchases.forEach(p => {
+            const key = `${p['رمز المادة']}|${p['تاريخ الصلاحية']}`;
+            if (!purchaseLookup.has(key)) {
+                purchaseLookup.set(key, p['م']);
+            }
+            // Fallback by item code only
+            const itemCodeKey = p['رمز المادة'];
+            if (!purchaseLookup.has(itemCodeKey)) {
+                purchaseLookup.set(itemCodeKey, p['م']);
+            }
+        });
+    }
+    // --- End of new logic ---
 
     // 1. التحويل والإعداد الاولي
     let inventory = convertToObjects(physicalInventoryRaw);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    // 2. المرحلة الاولى: إضافة الاعمدة المؤقتة
-    inventory = inventory.map((item, index) => {
+    // 2. المرحلة الاولى: إضافة الاعمدة المؤقتة (مع تحسين التواريخ)
+    const inventoryWithMeta = [];
+    for (let i = 0; i < inventory.length; i++) {
+        if (i > 0 && i % 1000 === 0) {
+            await new Promise(resolve => setTimeout(resolve, 0));
+        }
+        const item = inventory[i];
         const quantity = roundToDecimalPlaces(item['الكمية'] || 0, 2);
-        const expiryDate = new Date(item['تاريخ الصلاحية']);
-        expiryDate.setHours(0, 0, 0, 0);
+        const expiryDateObj = new Date(item['تاريخ الصلاحية']);
+        expiryDateObj.setHours(0, 0, 0, 0);
+        const expiryVal = expiryDateObj.getTime();
 
         let notes = '';
         if (compare(quantity, 0) < 0) {
             notes = 'سالب';
-        } else if (expiryDate <= today) {
+        } else if (expiryVal <= today.getTime()) {
             notes = 'منتهي';
         } else {
             notes = 'موجب';
         }
 
-        return {
+        inventoryWithMeta.push({
             ...item,
-            م: index + 1,
+            م: i + 1,
             الكمية: quantity,
             ملاحظات: notes,
-        };
-    });
+            _expiryVal: expiryVal // Store numeric timestamp
+        });
+    }
+    inventory = inventoryWithMeta;
 
     // 3. المرحلة الثانية: تحديد السجلات التي تحتاج معالجة
     const codesToProcess = new Set();
@@ -210,10 +214,16 @@ export const processPhysicalInventory = (physicalInventoryRaw) => {
         if (item['ملاحظات'] === 'سالب' || item['ملاحظات'] === 'منتهي') {
             list = 'F';
         }
+        // --- Start of new logic: Find matching purchase record ID ---
+        const key = `${item['رمز المادة']}|${item['تاريخ الصلاحية']}`;
+        const itemCodeKey = item['رمز المادة'];
+        let recordId = purchaseLookup.get(key) || purchaseLookup.get(itemCodeKey) || (index + 1).toString();
+        // --- End of new logic ---
+
         return {
             ...item,
             'القائمة': list,
-            'رقم السجل': (index + 1).toString(),
+            'رقم السجل': recordId.toString(),
         };
     });
 
@@ -226,7 +236,10 @@ export const processPhysicalInventory = (physicalInventoryRaw) => {
 
     sortedFinalInventory.forEach((item, index) => {
         item['م'] = index + 1;
-        item['رقم السجل'] = (index + 1).toString();
+        // Re-assign record ID based on the final sorted index if it was a fallback
+        if (!purchaseLookup.has(`${item['رمز المادة']}|${item['تاريخ الصلاحية']}`) && !purchaseLookup.has(item['رمز المادة'])) {
+           item['رقم السجل'] = (index + 1).toString();
+        }
     });
 
     // 7. المرحلة السادسة: تقسيم البيانات

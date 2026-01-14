@@ -16,23 +16,13 @@ import {
     Decimal
 } from '../utils/financialCalculations.js';
 
-const convertToObjects = (data) => {
-    if (!data || data.length < 2) return [];
-    const headers = data[0];
-    return data.slice(1).map(row => {
-        const obj = {};
-        headers.forEach((header, index) => {
-            obj[header] = row[index];
-        });
-        return obj;
-    });
-};
+import { convertToObjects } from '../utils/dataUtils.js';
 
 const sortByDateAsc = (data, dateKey) => {
     return data.sort((a, b) => new Date(a[dateKey]) - new Date(b[dateKey]));
 };
 
-export const calculateSalesCost = (netPurchasesList, netSalesList) => {
+export const calculateSalesCost = async (netPurchasesList, netSalesList) => {
     const startTime = performance.now();
     const purchases = [...(netPurchasesList || [])];
     const sales = [...(netSalesList || [])];
@@ -40,12 +30,14 @@ export const calculateSalesCost = (netPurchasesList, netSalesList) => {
     console.log(`🚀 [SalesCost] معالجة: ${sales.length} مبيعات مقابل ${purchases.length} مشتريات`);
 
     // 1. Prepare Purchase Stock with mutable remaining quantity
-    const purchaseStock = purchases.map(p => ({
-        ...p,
-        remainingQuantity: roundToDecimalPlaces(p['الكمية'] || 0, 2),
-        // Pre-parse date for faster comparison
-        _dateObj: new Date(p['تاريخ العملية'])
-    }));
+    const purchaseStock = purchases;
+    for (let i = 0; i < purchaseStock.length; i++) {
+        const p = purchaseStock[i];
+        const d = new Date(p['تاريخ العملية']);
+        p.remainingQuantity = roundToDecimalPlaces(p['الكمية'] || 0, 2);
+        p._dateVal = d.getTime();
+        p._expiryVal = p['تاريخ الصلاحية'];
+    }
 
     // 2. Index purchases by Item Code (optimization)
     // This allows O(1) lookup instead of O(N) filtering
@@ -60,33 +52,38 @@ export const calculateSalesCost = (netPurchasesList, netSalesList) => {
 
     // 3. Sort purchases within each item group by date (FIFO)
     purchasesByItem.forEach(group => {
-        // Sort by date ascending
-        group.sort((a, b) => a._dateObj - b._dateObj);
+        // Sort by date ascending (using cached numeric value)
+        group.sort((a, b) => a._dateVal - b._dateVal);
     });
 
-    // Define matching strategies (simplified to assume we already filtered by Item Code)
-    const getMatchingKeys = (saleRecord, saleDateObj) => [
+    const getMatchingKeys = (saleRecord, saleDateVal) => [
         // Strategy 1: Exact match on Expiry Date + Same Quantity
-        (p) => saleDateObj >= p._dateObj &&
-            p['تاريخ الصلاحية'] === saleRecord['تاريخ الصلاحية'] &&
+        (p) => saleDateVal >= p._dateVal &&
+            p._expiryVal === saleRecord['تاريخ الصلاحية'] &&
             compare(p['الكمية'], saleRecord['الكمية']) === 0,
 
         // Strategy 2: Exact match on Expiry Date
-        (p) => saleDateObj >= p._dateObj &&
-            p['تاريخ الصلاحية'] === saleRecord['تاريخ الصلاحية'],
+        (p) => saleDateVal >= p._dateVal &&
+            p._expiryVal === saleRecord['تاريخ الصلاحية'],
 
-        // Strategy 3: Standard FIFO (Date match only, item code is implied)
-        (p) => saleDateObj >= p._dateObj,
+        // Strategy 3: Standard FIFO
+        (p) => saleDateVal >= p._dateVal,
 
         // Strategy 4: Fuzzy date match (Purchased within 3 days after sale)
-        // Note: New Date() - New Date() gives milliseconds
-        (p) => (p._dateObj - saleDateObj) <= (3 * 24 * 60 * 60 * 1000) &&
-            saleDateObj < p._dateObj
+        (p) => (p._dateVal - saleDateVal) <= (3 * 24 * 60 * 60 * 1000) &&
+            saleDateVal < p._dateVal
     ];
 
     const purchaseUsageMap = new Map();
 
-    const salesWithCost = sales.map((sale, index) => {
+    const salesCostList = [];
+    for (let index = 0; index < sales.length; index++) {
+        // Yield to browser every 500 records
+        if (index > 0 && index % 500 === 0) {
+            await new Promise(resolve => setTimeout(resolve, 0));
+        }
+
+        const sale = sales[index];
         const saleQuantity = roundToDecimalPlaces(sale['الكمية'] || 0, 2);
         let remainingSaleQty = saleQuantity;
         let totalCost = new Decimal(0);
@@ -94,14 +91,15 @@ export const calculateSalesCost = (netPurchasesList, netSalesList) => {
         let matched = false;
         let notes = 'لايوجد مشتريات';
 
-        const saleDateObj = new Date(sale['تاريخ العملية']);
+        const dObj = new Date(sale['تاريخ العملية']);
+        const saleDateVal = dObj.getTime();
         const itemCode = sale['رمز المادة'];
 
         // Get only purchases for this item
         const itemPurchases = purchasesByItem.get(itemCode) || [];
 
         if (itemPurchases.length > 0) {
-            const matchingKeys = getMatchingKeys(sale, saleDateObj);
+            const matchingKeys = getMatchingKeys(sale, saleDateVal);
 
             for (let keyIndex = 0; keyIndex < matchingKeys.length; keyIndex++) {
                 if (compare(remainingSaleQty, 0) <= 0) break;
@@ -170,18 +168,24 @@ export const calculateSalesCost = (netPurchasesList, netSalesList) => {
         const saleUnitPrice = roundToInteger(sale['الافرادي'] || 0);
         const totalSaleValue = multiply(saleQuantity, saleUnitPrice);
         const totalProfit = subtract(totalSaleValue, totalCost);
-        const profitMargin = compare(totalCost, 0) > 0
-            ? multiply(divide(totalProfit, totalCost), 100)
+        // قبل: هامش الربح حسب الربح/التكلفة. الآن: نسبة التكلفة من السعر (التكلفة / السعر) وفق الوثيقة
+        const costPercent = compare(totalSaleValue, 0) > 0
+            ? multiply(divide(totalCost, totalSaleValue), 100)
             : new Decimal(0);
-        const saleDate = saleDateObj;
-        const purchaseDate = purchaseDetails.length > 0 ? new Date(purchaseDetails[0].purchaseDate) : null;
-        const inventoryAge = purchaseDate ? Math.floor((saleDate - purchaseDate) / (1000 * 60 * 60 * 24)) : 0;
 
+        const purchaseDateVal = purchaseDetails.length > 0 ? new Date(purchaseDetails[0].purchaseDate).getTime() : null;
+        const inventoryAge = purchaseDateVal ? Math.floor((saleDateVal - purchaseDateVal) / (1000 * 60 * 60 * 24)) : 0;
+
+        // Calculate profitability status based on total profit
+        // Use a small epsilon to handle potential floating point precision issues
+        const profitValue = totalProfit.toNumber();
         let profitabilityStatus = 'مطابق';
-        if (compare(totalProfit, 0) > 0) {
+        if (profitValue > 0.01) {  // Small positive profit
             profitabilityStatus = 'ربح';
-        } else if (compare(totalProfit, 0) < 0) {
+        } else if (profitValue < -0.01) {  // Small negative profit (loss)
             profitabilityStatus = 'خسارة';
+        } else {  // Profit is essentially zero (break-even)
+            profitabilityStatus = 'مطابق';
         }
 
         if (compare(remainingSaleQty, 0) > 0 && matched) {
@@ -214,7 +218,7 @@ export const calculateSalesCost = (netPurchasesList, netSalesList) => {
             console.log(`⏳ [SalesCost] ${index + 1}/${sales.length} (${percentage}%)`);
         }
 
-        return {
+        salesCostList.push({
             'م': index + 1,
             'رمز المادة': sale['رمز المادة'],
             'اسم المادة': sale['اسم المادة'],
@@ -228,22 +232,22 @@ export const calculateSalesCost = (netPurchasesList, netSalesList) => {
             'المورد': purchaseDetails.length > 0 ? (purchaseDetails[0].purchaseSupplier || purchaseDetails[0].purchaseBatch) : '',
             'رقم السجل': sale['رقم السجل'],
             'افرادي الربح': formatMoney(profitUnitPrice),
-            'نسبة الربح': roundToInteger(profitMargin).toString() + '%',
+            'نسبة الربح': roundToInteger(costPercent).toString() + '%',
             'اجمالي الربح': formatMoney(totalProfit),
             'عمر العملية': inventoryAge.toString(),
             'بيان الربحية': profitabilityStatus,
             'ملاحظات': notes
-        };
-    });
+        });
+    }
 
 
     const totalTime = performance.now() - startTime;
     console.log(`✅ [SalesCost] مكتمل:`);
     console.log(`   ⏱️  ${totalTime.toFixed(0)}ms`);
-    console.log(`   📊 ${salesWithCost.length} عملية`);
+    console.log(`   📊 ${salesCostList.length} عملية`);
 
     return {
-        costOfSalesList: salesWithCost,
+        costOfSalesList: salesCostList,
         purchaseUsageMap
     };
 };

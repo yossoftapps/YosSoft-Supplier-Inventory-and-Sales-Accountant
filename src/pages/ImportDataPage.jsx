@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Button, Upload, message, Typography, Space, Alert } from 'antd';
 import { UploadOutlined, FileExcelOutlined } from '@ant-design/icons';
 
@@ -13,6 +13,7 @@ import { calculateSupplierPayables } from '../logic/supplierPayablesLogic';
 import { calculateBookInventory } from '../logic/bookInventoryLogic';
 import { calculateAbnormalItems } from '../logic/abnormalItemsLogic';
 import { calculateMainAccountsSummary } from '../logic/mainAccountsLogic';
+import { calculatePreparingReturns } from '../logic/preparingReturnsLogic';
 import { enrichNetPurchases } from '../logic/enrichmentLogic';
 import { checkDataSufficiency } from '../logic/dataSufficiencyChecker';
 import { checkFinancialDataIntegrity } from '../logic/financialIntegrityChecker';
@@ -27,6 +28,13 @@ function ImportDataPage({ onDataProcessed }) {
     const [statusMessage, setStatusMessage] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [diagnostics, setDiagnostics] = useState(null);
+    const isMounted = useRef(true);
+
+    useEffect(() => {
+        return () => {
+            isMounted.current = false;
+        };
+    }, []);
 
     // دالة مساعدة لتحديد فهرس العمود بناءً على اسم العمود
     const getColumnIndex = (headers, columnName) => {
@@ -200,10 +208,12 @@ function ImportDataPage({ onDataProcessed }) {
 
                 console.log('Filtered purchases:', allPurchases.length, 'returns:', purchaseReturns.length);
                 console.log('Sample purchases:', allPurchases.slice(0, 2));
+                // 1. حساب صافي المشتريات (قائمة A + قائمة B)
+                setStatusMessage('جاري حساب صافي المشتريات...');
+                const netPurchasesResult = await calculateNetPurchases(allPurchases, purchaseReturns, normalizedData.purchases[0]);
+                debugPrintData(netPurchasesResult.netPurchasesList, 'Net Purchases Result (A)');
+                debugPrintData(netPurchasesResult.orphanReturnsList, 'Orphan Purchase Returns (B)');
                 console.log('Sample purchase returns:', purchaseReturns.slice(0, 2));
-
-                const netPurchasesResult = calculateNetPurchases(allPurchases, purchaseReturns, normalizedData.purchases[0]);
-                console.log('Net purchases result:', netPurchasesResult);
 
                 // 2. معالجة المبيعات
                 let allSales = [];
@@ -234,10 +244,20 @@ function ImportDataPage({ onDataProcessed }) {
                 console.log('Sample sales:', allSales.slice(0, 2));
                 console.log('Sample sales returns:', salesReturns.slice(0, 2));
 
-                const netSalesResult = calculateNetSales(allSales, salesReturns, normalizedData.sales[0]);
+                // Net Sales Combined (List C + List B + List F)
+                // قائمة C: صافي المبيعات
+                // 3. حساب صافي المبيعات (قائمة C + دمج المرتجعات اليتيمة D)
+                setStatusMessage('جاري حساب صافي المبيعات...');
+                const netSalesResult = await calculateNetSales(allSales, salesReturns, normalizedData.sales[0]);
+                debugPrintData(netSalesResult.netSalesList, 'Net Sales Result (C)');
+                debugPrintData(netSalesResult.orphanReturnsList, 'Orphan Sales Returns (D)');
 
                 // 3. معالجة الجرد الفعلي
-                const physicalInventoryResult = processPhysicalInventory(normalizedData.physicalInventory);
+                // 2. معالجة الجرد الفعلي (قائمة E + قائمة F)
+                setStatusMessage('جاري معالجة الجرد الفعلي...');
+                const physicalInventoryResult = await processPhysicalInventory(normalizedData.physicalInventory, normalizedData.purchases);
+                debugPrintData(physicalInventoryResult.listE, 'Positive Physical Inventory (E)');
+                debugPrintData(physicalInventoryResult.listF, 'Negative/Expired Physical Inventory (F)');
 
                 // --- 4. دمج القوائم (Cross Pollination) حسب المنطق المحاسبي ---
 
@@ -289,7 +309,9 @@ function ImportDataPage({ onDataProcessed }) {
                 console.log(`📊 [DataMerging] NetPurchases: ${netPurchasesCombined.length} (A+D), NetSales: ${netSalesCombined.length} (C+B+F)`);
 
                 // 5. معالجة فائض المخزون
-                const excessInventoryResult = calculateExcessInventory(
+                // 4. حساب فائض المخزون
+                setStatusMessage('جاري حساب فائض المخزون...');
+                const excessInventoryResult = await calculateExcessInventory(
                     normalizedData.physicalInventory,
                     normalizedData.sales,
                     netPurchasesCombined,
@@ -298,7 +320,8 @@ function ImportDataPage({ onDataProcessed }) {
 
                 // 6. معالجة المخزون النهائي
                 // يستخدم صافي المشتريات المدمج (A+D) والجرد الفعلي الموجب (E)
-                const endingInventoryResult = calculateEndingInventory(
+                setStatusMessage('جاري حساب المخزون النهائي...');
+                const endingInventoryResult = await calculateEndingInventory(
                     netPurchasesCombined,
                     physicalInventoryResult.listE,
                     excessInventoryResult
@@ -306,27 +329,46 @@ function ImportDataPage({ onDataProcessed }) {
 
                 // 7. معالجة تكلفة المبيعات
                 // يستخدم صافي المشتريات المدمج (A+D) وصافي المبيعات المدمج (C+B+F)
-                const salesCostResult = calculateSalesCost(
-                    netPurchasesCombined,
+                // 6. حساب تكلفة المبيعات
+                setStatusMessage('جاري حساب تكلفة المبيعات...');
+                const salesCostResult = await calculateSalesCost(
+                    endingInventoryResult.updatedNetPurchasesList,
                     netSalesCombined
                 );
 
-                // 8. معالجة استحقاق الموردين
-                const suppliersPayablesResult = calculateSupplierPayables(normalizedData.supplierbalances, endingInventoryResult.endingInventoryList);
+                // 7. حساب استحقاقات الموردين
+                setStatusMessage('جاري حساب استحقاقات الموردين...');
+                const suppliersPayablesResult = await calculateSupplierPayables(
+                    normalizedData.supplierbalances,
+                    endingInventoryResult.endingInventoryList
+                );
 
                 // 9. تقارير تحليلية (تجهيز البيانات فقط)
                 // سيتم حسابها عند الطلب في App.jsx لتقليل زمن الانتظار
 
                 // 10. ملخص الحسابات الرئيسية
-                const mainAccountsResult = calculateMainAccountsSummary(suppliersPayablesResult);
+                // 10. حساب ملخص الحسابات الرئيسية
+                setStatusMessage('جاري حساب ملخص الحسابات الرئيسية...');
+                const mainAccountsResult = await calculateMainAccountsSummary(suppliersPayablesResult);
 
                 // 11. معالجة الجرد الدفتري
                 // يستخدم القيم المدمجة للمقارنة
-                const bookInventoryResult = calculateBookInventory(netPurchasesCombined, netSalesCombined);
+                setStatusMessage('جاري حساب الجرد الدفتري...');
+                const bookInventoryResult = await calculateBookInventory(netPurchasesCombined, netSalesCombined);
 
-                // 12. معالجة الاصناف الشاذة (يعتمد على نتائج سابقة)
-                // قائمة B (Orphan P), D (Orphan S), F (Physical Neg/Exp)
-                const abnormalItemsResult = calculateAbnormalItems(netPurchasesResult, netSalesResult, physicalInventoryResult);
+                // 9. تجميع الاصناف الشاذة
+                setStatusMessage('جاري تجميع الاصناف الشاذة...');
+                const abnormalItemsResult = await calculateAbnormalItems(
+                    netPurchasesResult,
+                    netSalesResult,
+                    physicalInventoryResult
+                );
+
+                // 12. حساب تجهيز المرتجعات
+                setStatusMessage('جاري حساب تجهيز المرتجعات...');
+                const preparingReturnsResult = await calculatePreparingReturns(
+                    endingInventoryResult.endingInventoryList
+                );
 
                 // 13. إثراء تقرير صافي المشتريات (كميات الجرد والمبيعات)
                 if (salesCostResult && endingInventoryResult) {
@@ -349,6 +391,7 @@ function ImportDataPage({ onDataProcessed }) {
                     suppliersPayables: suppliersPayablesResult,
                     bookInventory: bookInventoryResult,
                     abnormalItems: abnormalItemsResult,
+                    preparingReturns: preparingReturnsResult,
                     mainAccounts: mainAccountsResult
                 };
 

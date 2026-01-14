@@ -7,6 +7,7 @@ console.log('Testing export integration functionality...');
 const mockReportData = {
   inventoryReport: {
     sheetName: 'تقرير المخزون',
+    reportDate: new Date().toISOString().slice(0,10),
     columns: [
       { title: 'رمز المادة', dataIndex: 'code' },
       { title: 'اسم المادة', dataIndex: 'name' },
@@ -20,6 +21,7 @@ const mockReportData = {
   },
   salesReport: {
     sheetName: 'تقرير المبيعات',
+    reportDate: new Date().toISOString().slice(0,10),
     columns: [
       { title: 'رقم العملية', dataIndex: 'opNumber' },
       { title: 'تاريخ العملية', dataIndex: 'opDate' },
@@ -44,6 +46,10 @@ try {
   // Verify data arrays are properly serialized
   console.log('✅ Inventory data array:', Array.isArray(serializedData.inventoryReport.data) && serializedData.inventoryReport.data.length === 2);
   console.log('✅ Sales data array:', Array.isArray(serializedData.salesReport.data) && serializedData.salesReport.data.length === 2);
+  
+  // Verify reportDate presence and format (YYYY-MM-DD)
+  console.log('✅ Inventory reportDate present and valid:', typeof serializedData.inventoryReport.reportDate === 'string' && /\d{4}-\d{2}-\d{2}/.test(serializedData.inventoryReport.reportDate));
+  console.log('✅ Sales reportDate present and valid:', typeof serializedData.salesReport.reportDate === 'string' && /\d{4}-\d{2}-\d{2}/.test(serializedData.salesReport.reportDate));
   
   // Verify data content
   console.log('✅ Inventory data content:', 

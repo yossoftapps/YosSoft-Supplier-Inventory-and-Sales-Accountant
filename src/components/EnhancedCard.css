@@ -1,0 +1,485 @@
+/**
+ * ملف CSS للبطاقات التفاعلية المحسّنة
+ * يحتوي على تأثيرات حركية وتصميم عصري
+ */
+
+/* ========================================
+   البطاقة الأساسية المحسّنة
+   ======================================== */
+
+.enhanced-card {
+    background: #ffffff;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    padding: 24px;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+    border: 1px solid #f0f0f0;
+}
+
+.enhanced-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, #1890ff, #52c41a);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform 0.3s ease;
+}
+
+.enhanced-card--hoverable {
+    cursor: pointer;
+}
+
+.enhanced-card--hoverable:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+.enhanced-card--hoverable:hover::before {
+    transform: scaleX(1);
+}
+
+.enhanced-card--hoverable:active {
+    transform: translateY(-2px);
+}
+
+/* حالة التحميل */
+.enhanced-card--loading {
+    pointer-events: none;
+    opacity: 0.6;
+}
+
+.enhanced-card__loading-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(255, 255, 255, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+}
+
+.enhanced-card__spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid #f0f0f0;
+    border-top-color: #1890ff;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* رأس البطاقة */
+.enhanced-card__header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.enhanced-card__icon {
+    font-size: 24px;
+    color: #1890ff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    background: linear-gradient(135deg, #e6f7ff 0%, #bae7ff 100%);
+    border-radius: 12px;
+    transition: transform 0.3s ease;
+}
+
+.enhanced-card--hoverable:hover .enhanced-card__icon {
+    transform: scale(1.1) rotate(5deg);
+}
+
+.enhanced-card__title-wrapper {
+    flex: 1;
+}
+
+.enhanced-card__title {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+    color: #262626;
+    line-height: 1.4;
+}
+
+.enhanced-card__subtitle {
+    margin: 4px 0 0;
+    font-size: 14px;
+    color: #8c8c8c;
+    line-height: 1.4;
+}
+
+.enhanced-card__content {
+    color: #595959;
+    line-height: 1.6;
+}
+
+/* ========================================
+   بطاقة الإحصائيات
+   ======================================== */
+
+.stat-card {
+    background: linear-gradient(135deg, #ffffff 0%, #f9f9f9 100%);
+}
+
+.stat-card__content {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.stat-card__main {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+}
+
+.stat-card__icon {
+    font-size: 32px;
+    width: 64px;
+    height: 64px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #1890ff 0%, #096dd9 100%);
+    color: white;
+    border-radius: 16px;
+    box-shadow: 0 4px 12px rgba(24, 144, 255, 0.3);
+    transition: all 0.3s ease;
+}
+
+.stat-card:hover .stat-card__icon {
+    transform: scale(1.05);
+    box-shadow: 0 6px 16px rgba(24, 144, 255, 0.4);
+}
+
+.stat-card__info {
+    flex: 1;
+}
+
+.stat-card__title {
+    margin: 0 0 8px;
+    font-size: 14px;
+    color: #8c8c8c;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.stat-card__value {
+    margin: 0 0 8px;
+    font-size: 32px;
+    font-weight: 700;
+    color: #262626;
+    line-height: 1.2;
+    background: linear-gradient(135deg, #1890ff 0%, #52c41a 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.stat-card__change {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.stat-card__change--positive {
+    color: #52c41a;
+}
+
+.stat-card__change--negative {
+    color: #ff4d4f;
+}
+
+.stat-card__change--neutral {
+    color: #8c8c8c;
+}
+
+.stat-card__change-icon {
+    font-size: 16px;
+}
+
+.stat-card__trend {
+    height: 60px;
+    margin-top: 8px;
+}
+
+/* ========================================
+   البطاقة القابلة للطي
+   ======================================== */
+
+.collapsible-card {
+    background: #ffffff;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    overflow: hidden;
+    border: 1px solid #f0f0f0;
+    transition: all 0.3s ease;
+}
+
+.collapsible-card:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+
+.collapsible-card__header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 20px 24px;
+    cursor: pointer;
+    background: linear-gradient(135deg, #fafafa 0%, #ffffff 100%);
+    transition: background 0.3s ease;
+    user-select: none;
+}
+
+.collapsible-card__header:hover {
+    background: linear-gradient(135deg, #f5f5f5 0%, #fafafa 100%);
+}
+
+.collapsible-card__icon {
+    font-size: 20px;
+    color: #1890ff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.collapsible-card__title {
+    flex: 1;
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: #262626;
+}
+
+.collapsible-card__toggle {
+    background: none;
+    border: none;
+    padding: 8px;
+    cursor: pointer;
+    color: #8c8c8c;
+    transition: color 0.3s ease;
+}
+
+.collapsible-card__toggle:hover {
+    color: #1890ff;
+}
+
+.collapsible-card__arrow {
+    display: inline-block;
+    transition: transform 0.3s ease;
+    font-size: 12px;
+}
+
+.collapsible-card__arrow--up {
+    transform: rotate(180deg);
+}
+
+.collapsible-card__content {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease;
+}
+
+.collapsible-card__content--visible {
+    max-height: 2000px;
+}
+
+.collapsible-card__inner {
+    padding: 24px;
+    border-top: 1px solid #f0f0f0;
+}
+
+/* ========================================
+   بطاقة الإجراءات
+   ======================================== */
+
+.action-card__actions {
+    display: flex;
+    gap: 12px;
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid #f0f0f0;
+    flex-wrap: wrap;
+}
+
+.action-card__button {
+    padding: 10px 20px;
+    border: 1px solid #d9d9d9;
+    border-radius: 6px;
+    background: #ffffff;
+    color: #595959;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.action-card__button:hover {
+    border-color: #1890ff;
+    color: #1890ff;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(24, 144, 255, 0.2);
+}
+
+.action-card__button:active {
+    transform: translateY(0);
+}
+
+.action-card__button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.action-card__button:disabled:hover {
+    border-color: #d9d9d9;
+    color: #595959;
+    box-shadow: none;
+}
+
+.action-card__button--primary {
+    background: linear-gradient(135deg, #1890ff 0%, #096dd9 100%);
+    border-color: #1890ff;
+    color: #ffffff;
+}
+
+.action-card__button--primary:hover {
+    background: linear-gradient(135deg, #40a9ff 0%, #1890ff 100%);
+    border-color: #40a9ff;
+    color: #ffffff;
+    box-shadow: 0 4px 12px rgba(24, 144, 255, 0.3);
+}
+
+.action-card__button-icon {
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+}
+
+/* ========================================
+   تأثيرات الحركة
+   ======================================== */
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.enhanced-card {
+    animation: fadeIn 0.4s ease;
+}
+
+/* ========================================
+   التصميم المتجاوب
+   ======================================== */
+
+@media (max-width: 768px) {
+    .enhanced-card {
+        padding: 16px;
+    }
+
+    .stat-card__value {
+        font-size: 24px;
+    }
+
+    .stat-card__icon {
+        width: 48px;
+        height: 48px;
+        font-size: 24px;
+    }
+
+    .action-card__actions {
+        flex-direction: column;
+    }
+
+    .action-card__button {
+        width: 100%;
+        justify-content: center;
+    }
+}
+
+/* ========================================
+   الوضع الداكن (اختياري)
+   ======================================== */
+
+@media (prefers-color-scheme: dark) {
+    .enhanced-card {
+        background: #1f1f1f;
+        border-color: #303030;
+        color: #e0e0e0;
+    }
+
+    .enhanced-card__title {
+        color: #ffffff;
+    }
+
+    .enhanced-card__subtitle {
+        color: #a0a0a0;
+    }
+
+    .stat-card {
+        background: linear-gradient(135deg, #1f1f1f 0%, #2a2a2a 100%);
+    }
+
+    .stat-card__value {
+        color: #ffffff;
+    }
+
+    .collapsible-card {
+        background: #1f1f1f;
+        border-color: #303030;
+    }
+
+    .collapsible-card__header {
+        background: linear-gradient(135deg, #2a2a2a 0%, #1f1f1f 100%);
+    }
+
+    .collapsible-card__header:hover {
+        background: linear-gradient(135deg, #303030 0%, #2a2a2a 100%);
+    }
+
+    .action-card__button {
+        background: #2a2a2a;
+        border-color: #404040;
+        color: #e0e0e0;
+    }
+
+    .action-card__button:hover {
+        background: #303030;
+        border-color: #1890ff;
+    }
+}

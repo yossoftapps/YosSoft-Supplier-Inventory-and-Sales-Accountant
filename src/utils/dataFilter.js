@@ -6,6 +6,8 @@
  * @param {Object} filters - معايير التصفية
  * @returns {Array} البيانات المصفاة
  */
+import safeString from './safeString.js';
+
 export const filterData = (data, filters) => {
   if (!data || !Array.isArray(data) || data.length === 0) {
     return [];
@@ -39,7 +41,7 @@ export const filterData = (data, filters) => {
 
     // تصفية الفئة (مستخلصة من اسم المادة)
     if (filters.category && item['اسم المادة']) {
-      const itemCategory = item['اسم المادة'].split(/[-\s]/)[0];
+      const itemCategory = safeString(item['اسم المادة']).split(/[-\s]/)[0];
       if (itemCategory !== filters.category) {
         return false;
       }
@@ -47,21 +49,21 @@ export const filterData = (data, filters) => {
 
     // تصفية رمز المادة
     if (filters.materialCode && item['رمز المادة']) {
-      if (!String(item['رمز المادة']).toLowerCase().includes(filters.materialCode.toLowerCase())) {
+      if (!safeString(item['رمز المادة']).toLowerCase().includes(safeString(filters.materialCode).toLowerCase())) {
         return false;
       }
     }
 
     // تصفية اسم المادة
     if (filters.materialName && item['اسم المادة']) {
-      if (!String(item['اسم المادة']).toLowerCase().includes(filters.materialName.toLowerCase())) {
+      if (!safeString(item['اسم المادة']).toLowerCase().includes(safeString(filters.materialName).toLowerCase())) {
         return false;
       }
     }
 
     // تصفية رمز الحساب
     if (filters.accountCode && item['رمز الحساب']) {
-      if (!String(item['رمز الحساب']).toLowerCase().includes(filters.accountCode.toLowerCase())) {
+      if (!safeString(item['رمز الحساب']).toLowerCase().includes(safeString(filters.accountCode).toLowerCase())) {
         return false;
       }
     }
@@ -78,6 +80,16 @@ export const filterData = (data, filters) => {
       if (item['التصنيف ABC'] !== filters.abcClassification) {
         return false;
       }
+    }
+
+    // البحث الذكي (Smart Search) - البحث في كل الحقول
+    if (filters.smartSearch) {
+      const searchStr = safeString(filters.smartSearch).toLowerCase();
+      // البحث في القيم النصية والرقمية لكل الحقول في السجل
+      const match = Object.values(item).some(val =>
+        val !== null && val !== undefined && safeString(val).toLowerCase().includes(searchStr)
+      );
+      if (!match) return false;
     }
 
     return true;

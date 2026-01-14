@@ -5,7 +5,7 @@
 
 import { formatQuantity, formatMoney } from '../utils/financialCalculations.js';
 
-export const calculateAbnormalItems = (netPurchasesData, netSalesData, physicalInventoryData) => {
+export const calculateAbnormalItems = async (netPurchasesData, netSalesData, physicalInventoryData) => {
     // قائمة B: المرتجعات اليتيمة من صافي المشتريات
     const listB = netPurchasesData?.orphanReturnsList || [];
 
@@ -56,26 +56,17 @@ export const calculateAbnormalItems = (netPurchasesData, netSalesData, physicalI
 
     // الفرز: رمز المادة -> تاريخ العملية -> تاريخ الصلاحية
     combinedList.sort((a, b) => {
-        // 1. رمز المادة
         const codeA = String(a['رمز المادة'] || '').toLowerCase();
         const codeB = String(b['رمز المادة'] || '').toLowerCase();
-        if (codeA < codeB) return -1;
-        if (codeA > codeB) return 1;
+        if (codeA !== codeB) return codeA.localeCompare(codeB);
 
-        // 2. تاريخ العملية (من الاحدث الى الاقدم كما هو معتاد في التقارير الاخرى؟ ام تصاعدي؟ طلب المستخدم "فرزها" ولم يحدد اتجاه. سأفرز تصاعدي (الاقدم للاحدث) منطقيا للتسلسل الزمني، او كما هو متبع في باقي التطبيق)
-        // المستخدم طلب "ثم تاريخ العملية".
-        const dateA = new Date(a['تاريخ العملية'] || '1900-01-01');
-        const dateB = new Date(b['تاريخ العملية'] || '1900-01-01');
-        if (dateA < dateB) return -1;
-        if (dateA > dateB) return 1;
+        const dateA = a['تاريخ العملية'] ? new Date(a['تاريخ العملية']).getTime() : 0;
+        const dateB = b['تاريخ العملية'] ? new Date(b['تاريخ العملية']).getTime() : 0;
+        if (dateA !== dateB) return dateA - dateB;
 
-        // 3. تاريخ الصلاحية
-        const expiryA = new Date(a['تاريخ الصلاحية'] || '1900-01-01');
-        const expiryB = new Date(b['تاريخ الصلاحية'] || '1900-01-01');
-        if (expiryA < expiryB) return -1;
-        if (expiryA > expiryB) return 1;
-
-        return 0;
+        const expiryA = a['تاريخ الصلاحية'] ? new Date(a['تاريخ الصلاحية']).getTime() : 0;
+        const expiryB = b['تاريخ الصلاحية'] ? new Date(b['تاريخ الصلاحية']).getTime() : 0;
+        return expiryA - expiryB;
     });
 
     // إضافة الرقم التسلسلي (م)
